@@ -1,0 +1,721 @@
+{
+  "version": "1.0.0",
+  "generated": "2026-05-05",
+  "source": "Sailor campaign memory + GEO skill playbook (Pemba AI / pemba.ai)",
+  "description": "Seed knowledge base for the Sailor AEO/GEO agent. Entries stripped of client-specific data — patterns only.",
+  "entries": [
+
+    {
+      "category": "geo_strategy",
+      "query_pattern": "how to get cited by AI tools",
+      "content": {
+        "title": "GEO Core Strategy: Getting Cited by AI Answer Engines",
+        "summary": "Seven pillars for getting your content cited by ChatGPT, Perplexity, Claude, and Google AI Overviews.",
+        "pillars": [
+          {
+            "id": 1,
+            "name": "Structured FAQ Content",
+            "detail": "AI tools strongly prefer clear Q&A format. Every target page should directly answer the exact questions people ask in chat. Use FAQ schema markup (application/ld+json). The H2 heading should be the exact question — e.g. 'What is an affordable alternative to a life coach?'"
+          },
+          {
+            "id": 2,
+            "name": "llms.txt",
+            "detail": "Place an llms.txt file at the root of your domain. Format it as structured markdown with product descriptions, key facts, and brand voice. AI crawlers read this to build their representation of your brand. Keep it under 2000 words, update monthly."
+          },
+          {
+            "id": 3,
+            "name": "Be the Definitive Source",
+            "detail": "Write the most comprehensive, accurate answer to your target queries. AI tools cite sources with depth and authority. A 2000-word definitive guide beats a 500-word overview every time. Include statistics, examples, comparisons, and step-by-step instructions."
+          },
+          {
+            "id": 4,
+            "name": "Get Cited by Others (Backlinks)",
+            "detail": "Backlinks from authoritative sites train AI associations. A mention in a Forbes article, a Reddit thread with upvotes, or a citation in a popular blog all signal trustworthiness to AI retrieval systems. Prioritise backlinks from domains that AI tools already trust."
+          },
+          {
+            "id": 5,
+            "name": "Schema Markup",
+            "detail": "Product, Article, FAQ, HowTo, and Organization schema all help AI parse your content correctly. Implement JSON-LD in the <head>. For SaaS: use SoftwareApplication schema. For service pages: use Service schema. For blog posts: use Article + FAQ combo."
+          },
+          {
+            "id": 6,
+            "name": "Brand Mentions (Unlinked)",
+            "detail": "Mentions without links still train AI associations. Getting your brand name into Reddit discussions, podcast transcripts, Quora answers, and community forums builds the AI's understanding of what your brand is and who it serves."
+          },
+          {
+            "id": 7,
+            "name": "Answer the Exact Phrasing",
+            "detail": "Include the exact conversational question as an H2 heading on the page, then answer it directly in the first paragraph below. AI tools often retrieve the first 1-3 sentences after an H2. Don't bury the answer — lead with it."
+          }
+        ],
+        "priority": "P1",
+        "applies_to": ["SaaS", "service pages", "blog", "landing pages"]
+      },
+      "sources": ["Cloudflare AI research", "BrightEdge GEO study", "Lily Ray", "pemba.ai campaign data 2026"]
+    },
+
+    {
+      "category": "on_page_optimisation",
+      "query_pattern": "on-page SEO optimisation checklist",
+      "content": {
+        "title": "On-Page SEO: Title, Meta, H1 Optimisation Pattern",
+        "summary": "Proven pattern for updating page metadata to target a keyword while maintaining CTR and AI citability.",
+        "pattern": {
+          "title_tag": {
+            "formula": "[Primary Keyword] | [Brand Name] — [Value Prop in 3-5 words]",
+            "examples": [
+              "AI SEO Platform | Pemba — Automated for Agencies",
+              "White-Label SEO Software | Pemba — Built for Digital Agencies",
+              "Free AI SEO Audit | Pemba — Know Where You Stand in 2 Minutes"
+            ],
+            "max_length": 60,
+            "notes": "Front-load the keyword. Include brand after pipe. Keep under 60 chars to avoid truncation."
+          },
+          "meta_description": {
+            "formula": "[Pain point addressed]. [What the product/page does]. [CTA]. [Secondary keyword if natural].",
+            "examples": [
+              "Most agency sites are invisible on Google and AI tools. Pemba automates your SEO — keywords, schema, content, backlinks. Start your free audit today.",
+              "White-label SEO software that does the work for you. Pemba tracks keywords, optimises pages, and builds authority — automatically. Try it free."
+            ],
+            "max_length": 155,
+            "notes": "Include primary keyword naturally in first 20 words. Strong CTA. Aim for 155 chars."
+          },
+          "h1": {
+            "formula": "Match the primary keyword intent — not necessarily exact match. Must be compelling.",
+            "examples": [
+              "The AI SEO Platform That Works While You Sleep",
+              "White-Label SEO Software for Digital Agencies",
+              "Your Free AI SEO Audit — See Exactly Where You Stand"
+            ],
+            "notes": "Only one H1 per page. Should match title tag intent but can be longer and more compelling."
+          }
+        },
+        "real_results": {
+          "context": "Applied this pattern to 5 pages (/, /about, /pricing, /blog, /free-audit) across a B2B SaaS site",
+          "observation": "Pages averaging GSC positions 2.6–5.8 after consistent weekly optimisation over 4 weeks",
+          "note": "Small site, low competition niche — results will vary at scale"
+        },
+        "priority": "P1",
+        "applies_to": ["homepage", "about", "pricing", "landing pages", "blog index"]
+      },
+      "sources": ["Backlinko on-page study", "Pemba campaign data April-May 2026"]
+    },
+
+    {
+      "category": "schema_markup",
+      "query_pattern": "FAQ schema for AEO",
+      "content": {
+        "title": "AEO Schema Pattern: FAQ + Entity Markup",
+        "summary": "Combining FAQ schema with entity/organization schema maximises AI citability and featured snippet eligibility.",
+        "implementation": {
+          "faq_schema": {
+            "type": "FAQPage",
+            "when_to_use": "Any page with Q&A content. Most effective on: pricing pages, about pages, service pages, blog posts with 'how to' content.",
+            "template": {
+              "@context": "https://schema.org",
+              "@type": "FAQPage",
+              "mainEntity": [
+                {
+                  "@type": "Question",
+                  "name": "What is [your product/service]?",
+                  "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Direct, complete answer in 2-4 sentences. AI tools will extract exactly this text."
+                  }
+                }
+              ]
+            },
+            "best_practices": [
+              "Use 3-7 questions per page — too many dilutes relevance",
+              "Questions must match real user queries (check 'People Also Ask' in Google)",
+              "Answers must be complete standalone — no 'see above' references",
+              "Include target keyword in at least one question naturally",
+              "Answers should be 40-60 words — enough detail, not so long AI skips it"
+            ]
+          },
+          "entity_schema": {
+            "type": "SoftwareApplication or Organization",
+            "when_to_use": "Homepage and about page always. Product pages for SaaS.",
+            "key_properties": ["name", "description", "url", "applicationCategory", "operatingSystem", "offers", "aggregateRating"],
+            "notes": "AI tools use this to understand what your business IS. Gets cited in 'what is X' queries."
+          }
+        },
+        "real_results": {
+          "context": "Applied FAQ + entity schema to 7 pages on a B2B SaaS site",
+          "keywords_targeted": ["AI SEO platform", "white-label SEO software", "AI SEO audit"],
+          "outcome": "Pages began appearing in Perplexity answers for branded queries within 2 weeks of implementation"
+        },
+        "priority": "P1",
+        "applies_to": ["all pages"]
+      },
+      "sources": ["Google Search Central", "Schema.org spec", "Pemba campaign data May 2026"]
+    },
+
+    {
+      "category": "keyword_research",
+      "query_pattern": "keyword research methodology",
+      "content": {
+        "title": "Keyword Research Framework: Five Buckets",
+        "summary": "Organise all target keywords into five intent buckets. Each bucket requires different content strategy and page types.",
+        "buckets": [
+          {
+            "id": "buying_intent",
+            "label": "Buying Intent Keywords",
+            "intent": "People ready to purchase",
+            "signals": ["buy", "pricing", "plans", "sign up", "get started", "free trial", "best [product]"],
+            "content_type": "Pricing page, landing page, product page",
+            "volume_target": "Lower volume acceptable — high conversion value",
+            "count_target": "8-12 keywords",
+            "priority": "P1 — highest ROI"
+          },
+          {
+            "id": "problem_aware",
+            "label": "Problem-Aware Keywords",
+            "intent": "People searching because they feel the pain — not yet aware of the product",
+            "signals": ["how to fix", "why is my", "struggling with", "can't figure out"],
+            "content_type": "Blog posts, guides, educational content",
+            "volume_target": "High volume acceptable — these are top-of-funnel",
+            "count_target": "8-12 keywords",
+            "priority": "P2 — blog content, long-term traffic"
+          },
+          {
+            "id": "competitor_alternative",
+            "label": "Competitor & Alternative Keywords",
+            "intent": "People aware of solutions, researching options",
+            "signals": ["alternative to X", "X vs Y", "X competitor", "better than X", "X review"],
+            "content_type": "Comparison pages, 'X alternative' landing pages",
+            "volume_target": "Lower volume but extremely high conversion intent",
+            "count_target": "6-10 keywords",
+            "priority": "P1 for established category — P2 for new market"
+          },
+          {
+            "id": "long_tail",
+            "label": "Long-Tail Keywords",
+            "intent": "Specific, niche queries — often question-based",
+            "signals": ["how do I", "what is the best", "step by step", "for [specific audience]"],
+            "content_type": "Blog posts, FAQ pages, resource pages",
+            "volume_target": "Low volume, low competition — fastest ranking wins for new sites",
+            "count_target": "10-15 keywords",
+            "priority": "P1 for new/small sites — fastest path to organic traffic"
+          },
+          {
+            "id": "ai_geo_queries",
+            "label": "AI SEO / GEO Queries",
+            "intent": "Phrases people type into ChatGPT, Perplexity, Claude, or Google AI Overviews",
+            "signals": ["conversational", "question-based", "what is the best X for Y", "how do I X without Y"],
+            "content_type": "FAQ pages, comprehensive guides, llms.txt",
+            "volume_target": "Not measurable by traditional tools — track AI citation visibility instead",
+            "count_target": "8-10 queries",
+            "priority": "P1 — the 2026 growth frontier, most businesses ignore this",
+            "measurement": "Search Perplexity, ChatGPT, Claude manually for your target queries weekly. Note when you appear."
+          }
+        ],
+        "priority": "P1 — must complete before creating any content",
+        "applies_to": ["all businesses", "all stages"]
+      },
+      "sources": ["Ahrefs keyword framework", "Semrush intent model", "BrightEdge AI research", "Backlinko"]
+    },
+
+    {
+      "category": "backlink_strategy",
+      "query_pattern": "backlink building for SaaS",
+      "content": {
+        "title": "Backlink Strategy: Realistic Targets for Early-Stage SaaS",
+        "summary": "Prioritised link-building approach for sites with low domain authority. Focus on attainable links first, not DA80+ targets.",
+        "tiers": [
+          {
+            "tier": 1,
+            "label": "Free Directories (Do Immediately)",
+            "targets": ["Product Hunt", "AppSumo", "G2", "Capterra", "GetApp", "AlternativeTo", "Futurepedia", "There's An AI For That"],
+            "effort": "Low",
+            "DA_range": "50-90",
+            "notes": "Submit this week. These give immediate indexed backlinks and referral traffic. G2 + Capterra also feed AI tools."
+          },
+          {
+            "tier": 2,
+            "label": "Community Engagement (Ongoing)",
+            "targets": ["Reddit (r/SEO, r/entrepreneur, r/SaaS, r/smallbusiness)", "Quora", "Product Hunt discussions", "Indie Hackers", "Hacker News Show HN"],
+            "effort": "Medium",
+            "DA_range": "80-95",
+            "notes": "Answer questions genuinely. Include product link only when directly relevant. Reddit links are nofollow but drive real traffic and AI mentions."
+          },
+          {
+            "tier": 3,
+            "label": "PR & Guest Posts (Month 2-3)",
+            "targets": ["Niche blogs accepting contributions", "Podcast appearances", "Newsletter sponsorships in niche"],
+            "effort": "High",
+            "DA_range": "30-60",
+            "notes": "Pitch a unique angle — 'how we used AI to automate our client SEO' not 'what is SEO'. Specificity gets accepted."
+          },
+          {
+            "tier": 4,
+            "label": "Skyscraper / Link Reclamation (Month 3+)",
+            "targets": ["Competitors' broken backlinks", "Unlinked brand mentions", "Resource pages in niche"],
+            "effort": "High",
+            "DA_range": "40-80",
+            "notes": "Use Ahrefs to find competitors' broken links. Offer your resource as replacement. 10-15% acceptance rate is realistic."
+          }
+        ],
+        "real_results": {
+          "directories_submitted": ["Product Hunt", "Futurepedia", "There's An AI For That", "AlternativeTo", "G2"],
+          "newsletters_pitched": 13,
+          "communities_answered": 12,
+          "observation": "Community answers drove more referral traffic in month 1 than directories"
+        },
+        "priority": "P1 for tier 1, P2 for tier 2-3, P3 for tier 4",
+        "applies_to": ["SaaS", "digital products", "service businesses"]
+      },
+      "sources": ["Backlinko skyscraper technique", "Ahrefs link building guide", "Pemba campaign data 2026"]
+    },
+
+    {
+      "category": "content_strategy",
+      "query_pattern": "AEO content strategy",
+      "content": {
+        "title": "AEO Content Strategy: P1/P2/P3 Action Framework",
+        "summary": "Three-tier priority system for AEO/GEO content implementation. P1 is this week, P2 is this month, P3 is ongoing.",
+        "p1_this_week": {
+          "label": "Fastest Wins — Do This Week",
+          "tasks": [
+            "Update title tags on all key pages (home, about, pricing, main landing page) to include primary keyword",
+            "Update meta descriptions — lead with pain point, include keyword naturally, strong CTA",
+            "Add FAQ schema (JSON-LD) to at least 3 pages — pricing, home, and most-visited blog post",
+            "Create or update llms.txt at root domain",
+            "Add Organization schema to homepage",
+            "Pick one long-tail keyword with <1000/mo searches — write a 1000-word answer page targeting it"
+          ],
+          "time_estimate": "4-6 hours total",
+          "expected_impact": "GSC impressions increase within 2-3 weeks. AI citations can appear within 1-2 weeks for branded queries."
+        },
+        "p2_this_month": {
+          "label": "Content Build — This Month",
+          "tasks": [
+            "Write 2-4 long-form blog posts targeting problem-aware keywords (1500-2500 words each)",
+            "Create one comparison page: 'X vs [Your Product]' for your top competitor",
+            "Add HowTo schema to any guide/tutorial content",
+            "Submit to all tier-1 directories",
+            "Build FAQ section on pricing page answering top 5 objections (with FAQ schema)"
+          ],
+          "time_estimate": "8-12 hours total"
+        },
+        "p3_ongoing": {
+          "label": "Authority Building — Every Week",
+          "tasks": [
+            "One community answer per week (Reddit, Quora, Indie Hackers) linking to relevant content",
+            "Monitor target queries in ChatGPT, Perplexity, Claude monthly — track when you appear",
+            "Weekly GSC review: which pages gaining impressions? Double down on those keywords.",
+            "One newsletter or podcast pitch per fortnight",
+            "Update existing content with fresh data/examples quarterly"
+          ]
+        },
+        "priority": "P1",
+        "applies_to": ["all businesses at any stage"]
+      },
+      "sources": ["Neil Patel content framework", "Pemba campaign data 2026", "GEO skill playbook"]
+    },
+
+    {
+      "category": "aeo_fundamentals",
+      "query_pattern": "what is AEO answer engine optimisation",
+      "content": {
+        "title": "AEO Fundamentals: The Four Layers (Pemba Model)",
+        "summary": "Answer Engine Optimisation targets AI systems that deliver direct answers rather than blue links. Pemba's model has four layers.",
+        "layers": [
+          {
+            "id": "SXO",
+            "name": "Search Experience Optimisation",
+            "description": "Traditional SEO combined with UX signals. Core Web Vitals, page experience, schema, structured content. The foundation everything else builds on.",
+            "key_tactics": ["Core Web Vitals", "mobile-first", "schema markup", "internal linking", "E-E-A-T signals"]
+          },
+          {
+            "id": "AIO",
+            "name": "AI Optimisation",
+            "description": "Optimising for Google's AI-powered features: AI Overviews, Search Generative Experience. Content structured to be extracted by Google's models.",
+            "key_tactics": ["FAQ schema", "featured snippet targeting", "structured headers", "direct answer format", "topical authority"]
+          },
+          {
+            "id": "GEO",
+            "name": "Generative Engine Optimisation",
+            "description": "Getting cited by external AI tools: ChatGPT, Perplexity, Claude. These tools query the web and synthesise answers. Being cited means being the source they trust.",
+            "key_tactics": ["llms.txt", "entity schema", "backlinks from trusted sources", "brand mentions", "comprehensive definitive content"]
+          },
+          {
+            "id": "AEO",
+            "name": "Answer Engine Optimisation",
+            "description": "The meta-layer: structuring ALL content so that any AI system — present and future — can extract, understand, and cite it accurately. AEO encompasses SXO + AIO + GEO plus future-proofing.",
+            "key_tactics": ["semantic HTML", "JSON-LD throughout", "clear entity relationships", "structured data for all content types", "llms.txt + sitemap.xml + robots.txt alignment"]
+          }
+        ],
+        "ai_tool_citations": {
+          "chatgpt": "Primarily uses Bing index. Optimise for Bing as well as Google. Bing Webmaster Tools registration required.",
+          "perplexity": "Crawls the web with its own bot (PerplexityBot). Check robots.txt is not blocking it. Content freshness matters more here.",
+          "claude": "Uses web search via Brave/Bing. Structured, authoritative content cited. FAQ format very effective.",
+          "google_ai_overviews": "Uses Google's index. Traditional SEO signals matter most here. Schema + topical authority + E-E-A-T."
+        },
+        "priority": "P1 — foundational understanding required before any tactics",
+        "applies_to": ["all businesses", "all content types"]
+      },
+      "sources": ["Emilia Möller — 2026 visibility framework", "Cloudflare AI research", "BrightEdge GEO study 2026", "Pemba AI reports system (implements Möller's Four Layers)"]
+    },
+
+    {
+      "category": "aeo_fundamentals",
+      "query_pattern": "AI readiness test is this site ready to be cited",
+      "content": {
+        "title": "Emilia Möller's 5-Part AI Inclusion Check",
+        "summary": "A five-pillar test for whether a site is ready to be cited by AI answer engines. Each pillar has a score (0-100). A site must pass all five to reliably appear in AI-generated answers.",
+        "pillars": [
+          {
+            "id": 1,
+            "name": "Findable",
+            "description": "Crawlable, indexed, accessible. Can AI bots reach and index the content?",
+            "how_to_score": "Check robots.txt allows GPTBot, PerplexityBot, ClaudeBot. Confirm pages are indexed in Google Search Console. No noindex tags on key pages. Sitemap.xml exists and is submitted.",
+            "score_blockers": ["robots.txt blocking AI crawlers", "noindex on service/product pages", "no sitemap", "broken links to key pages"],
+            "target": 100
+          },
+          {
+            "id": 2,
+            "name": "Understandable",
+            "description": "Clear language, logical structure. Can AI parse the content and understand what the page is about?",
+            "how_to_score": "Headings form a logical hierarchy (H1 > H2 > H3). No jargon without explanation. Content directly addresses a clear topic. Language is unambiguous.",
+            "score_blockers": ["marketing slogans as headings ('COLDBREW.ANYWHERE.' instead of 'What is freeze-dried cold brew?')", "no H1", "heading hierarchy is broken", "content is purely promotional with no informational value"],
+            "target": 90,
+            "key_signal": "Question-based headings (H2/H3) are the #1 AEO signal per Emilia Möller. Rewrite all service/product headings as the exact questions customers ask in ChatGPT and Google."
+          },
+          {
+            "id": 3,
+            "name": "Trustworthy",
+            "description": "Authority signals, schema markup. Does the site demonstrate credibility that AI systems can verify?",
+            "how_to_score": "Organization or LocalBusiness schema present. Business name, address, phone in plain text (not just images). Reviews visible on-page. HTTPS. Author attribution on content.",
+            "score_blockers": ["no schema markup", "no business contact info in text", "no reviews or social proof", "HTTP only"],
+            "implementation": [
+              "Add Organization schema with name, url, logo, contactPoint, sameAs (social profiles)",
+              "Add LocalBusiness schema if physical location (include address, phone, opening hours)",
+              "Embed Google Reviews widget on homepage",
+              "Add visible ISO date stamps to all blog/service pages (confirms freshness)",
+              "Ensure business name, address, phone are in plain text sitewide — not embedded in images"
+            ],
+            "target": 90
+          },
+          {
+            "id": 4,
+            "name": "Extractable",
+            "description": "Sections that stand alone as citations. Can AI pull a paragraph and use it as a complete answer without needing more context?",
+            "how_to_score": "Each section/paragraph makes sense in isolation. Answers are complete (40-60 words). No 'see above' or 'as mentioned' references. FAQ format used where appropriate.",
+            "score_blockers": ["paragraphs that reference earlier sections", "answers that don't include the question context", "no FAQ schema", "content that only makes sense with surrounding context"],
+            "implementation": [
+              "Add FAQPage schema markup — each answer must be a complete standalone response",
+              "Write answer-first paragraphs: lead with the answer, then elaborate",
+              "Each H2 section should work as a standalone citation — include enough context",
+              "40-60 words per answer is the sweet spot — enough detail, short enough to cite directly"
+            ],
+            "target": 90
+          },
+          {
+            "id": 5,
+            "name": "Reusable",
+            "description": "Format matches how AI constructs answers. Is the content structured in the format AI tools actually use when synthesising responses?",
+            "how_to_score": "Content uses bullet points, numbered lists, concise paragraphs. Definitions are clear. Comparisons are structured. Processes are step-by-step. Tables for comparisons.",
+            "score_blockers": ["dense unbroken paragraphs", "no list formatting", "no step-by-step structure for process content", "comparisons buried in prose rather than formatted as tables"],
+            "implementation": [
+              "Structure HowTo content as numbered steps with clear actions",
+              "Use bullet points for lists of features, benefits, requirements",
+              "Add HowTo schema for any process/tutorial content",
+              "Comparisons: use a table or a structured 'X vs Y' format",
+              "Definitions: one clear sentence, then elaboration"
+            ],
+            "target": 85
+          }
+        ],
+        "scoring": {
+          "90-100": "AI-ready — likely to be cited for branded and topical queries",
+          "70-89": "Partially ready — will be cited for some queries, misses others",
+          "50-69": "Significant gaps — AI tools will find the site but not cite it reliably",
+          "0-49": "Not AI-ready — invisible to AI answer engines"
+        },
+        "complete_visibility_checklist": {
+          "geo": [
+            "Add Google Reviews widget or embed to homepage",
+            "Add /llms.txt with business summary, services, FAQs",
+            "Add visible date stamps to all service/blog pages",
+            "Ensure business name, address, phone are in plain text on every page"
+          ],
+          "aeo": [
+            "Rewrite service/product headings as questions (e.g. 'What is osteopathy?' not 'Our Services')",
+            "Add answer-first paragraphs (40-60 words) under each question heading",
+            "Add FAQPage schema markup to FAQ section",
+            "Create a dedicated FAQ page targeting common customer questions",
+            "Add HowTo schema to treatment/process/tutorial pages"
+          ],
+          "sxo": [
+            "Ensure page loads under 3 seconds on mobile",
+            "Add BreadcrumbList schema to all inner pages",
+            "Add primary CTA on every service/product page"
+          ],
+          "seo": [
+            "Add LocalBusiness or Organization schema to homepage",
+            "Write unique meta descriptions for all pages (under 160 chars)",
+            "Add alt text to all images",
+            "Create location-specific or use-case-specific landing pages"
+          ],
+          "technical": [
+            "Add canonical tags to all pages",
+            "Submit XML sitemap to Google Search Console",
+            "Fix any crawl errors in Google Search Console",
+            "Enable HTTPS and check for mixed content warnings"
+          ]
+        },
+        "priority": "P1 — run this checklist before any other AEO work",
+        "applies_to": ["all websites", "all business types"]
+      },
+      "sources": ["Emilia Möller — AI Inclusion Check / AI readiness test", "Pemba AI reports system (implements Möller's 5-Part check)", "Pemba visibility checklist (20-item implementation)"]
+    },
+
+    {
+      "category": "geo_strategy",
+      "query_pattern": "llms.txt implementation",
+      "content": {
+        "title": "llms.txt: Implementation Guide",
+        "summary": "llms.txt is a structured file at your root domain that tells AI systems how to understand your business. Analogous to robots.txt but for AI crawlers.",
+        "format": {
+          "location": "https://yourdomain.com/llms.txt",
+          "structure": "Markdown. Top section: business description. Then: products/services as headings. Then: key facts, pricing, target audience, what makes you different.",
+          "template": "# [Brand Name]\n\n[1-2 sentence description of what you do and who you serve.]\n\n## Products\n\n### [Product Name]\n[Price]. [What it does]. [Who it's for]. [Key benefit].\n\n## Key Facts\n- [Fact 1]\n- [Fact 2]\n\n## Target Audience\n[Who your customer is — specific]\n\n## What Makes Us Different\n[Honest differentiator — not marketing fluff]"
+        },
+        "best_practices": [
+          "Keep under 2000 words — AI context windows have limits, brevity gets read fully",
+          "Use factual, declarative language — not marketing copy",
+          "Update when products or pricing change",
+          "Include specific numbers: price, team size, customers served, founding date",
+          "Mention your founders by name — AI tools use named entities to build brand knowledge graphs",
+          "Include your key product category keywords naturally",
+          "Do NOT block llms.txt in robots.txt (common mistake)"
+        ],
+        "robots_txt_note": "Add this to robots.txt to explicitly allow AI crawlers: 'User-agent: GPTBot\\nAllow: /\\nUser-agent: PerplexityBot\\nAllow: /\\nUser-agent: ClaudeBot\\nAllow: /'",
+        "priority": "P1",
+        "applies_to": ["all websites"]
+      },
+      "sources": ["llms.txt specification", "Anthropic crawler docs", "OpenAI crawler docs"]
+    },
+
+    {
+      "category": "competitor_analysis",
+      "query_pattern": "competitor analysis for SEO",
+      "content": {
+        "title": "Competitor Analysis: SEO Gap Analysis Framework",
+        "summary": "Find what competitors rank for that you don't, and find the underserved topics they've missed entirely.",
+        "steps": [
+          {
+            "step": 1,
+            "name": "Identify real competitors",
+            "detail": "Search your top 3-5 target keywords in Google. Note who appears in the top 5. Also check: who appears in Perplexity and ChatGPT for those same queries. AI-visible competitors may differ from Google SERP competitors."
+          },
+          {
+            "step": 2,
+            "name": "Content gap analysis",
+            "detail": "For each competitor: what blog topics do they cover? What keywords do their pages target (visible in title tags)? What questions do they answer on their FAQ/pricing pages? List topics they've covered well, and topics they haven't touched."
+          },
+          {
+            "step": 3,
+            "name": "Link gap analysis",
+            "detail": "Use Ahrefs (paid) or free alternative: check who links to competitors that doesn't link to you. Those sites already link to content in your niche — they may link to you too."
+          },
+          {
+            "step": 4,
+            "name": "Differentiation angle",
+            "detail": "For new/small sites: don't try to outrank established domains on head terms. Find the underserved long-tail angle they haven't covered. A 2000-word guide on a specific use case beats competing on 'best [category]' with DR50+ sites."
+          },
+          {
+            "step": 5,
+            "name": "SERP type analysis",
+            "detail": "What content TYPE ranks for your target keywords? Blog posts, product pages, directories, YouTube, Reddit? If Reddit dominates, target Reddit. If it's all long-form guides, write a longer guide. Match the format that's working."
+          }
+        ],
+        "priority": "P1 — before creating any content",
+        "applies_to": ["SaaS", "digital products", "service businesses", "ecommerce"]
+      },
+      "sources": ["Ahrefs content gap tool", "Semrush keyword gap", "Backlinko skyscraper methodology"]
+    },
+
+    {
+      "category": "aeo_fundamentals",
+      "query_pattern": "E-E-A-T for AI tools",
+      "content": {
+        "title": "E-E-A-T Signals: What AI Tools Look for in Sources",
+        "summary": "Google's Quality Rater Guidelines define E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness). AI tools use similar signals to decide which sources to cite.",
+        "signals": {
+          "experience": {
+            "description": "First-hand experience with the topic",
+            "implementation": [
+              "Include case studies with real numbers",
+              "Write from personal experience — 'we found that', 'after running 50 campaigns'",
+              "Include photos, screenshots, real examples",
+              "Author bios with relevant credentials visible on page"
+            ]
+          },
+          "expertise": {
+            "description": "Deep knowledge of the subject",
+            "implementation": [
+              "Comprehensive, accurate content — no surface-level fluff",
+              "Cite sources with links to authoritative external references",
+              "Use correct industry terminology",
+              "Address nuance and edge cases, not just the main use case"
+            ]
+          },
+          "authoritativeness": {
+            "description": "Recognition by others in the field",
+            "implementation": [
+              "Backlinks from authoritative sites",
+              "Mentions in industry publications",
+              "Reviews and ratings on third-party platforms (G2, Capterra)",
+              "Speaking at conferences, podcast appearances"
+            ]
+          },
+          "trustworthiness": {
+            "description": "Accurate, honest, safe content",
+            "implementation": [
+              "HTTPS (required)",
+              "Clear About page with team info",
+              "Privacy policy and terms of service",
+              "No misleading claims",
+              "Contact information visible",
+              "Reviews and testimonials (verified if possible)"
+            ]
+          }
+        },
+        "ai_specific_note": "AI tools weight authoritativeness and trustworthiness most heavily when choosing citation sources. A page with 3 authoritative backlinks and FAQ schema will be cited over a page with great content but no external validation.",
+        "priority": "P2 — build on top of P1 schema and content work",
+        "applies_to": ["all websites"]
+      },
+      "sources": ["Google Quality Rater Guidelines 2024", "Lily Ray E-E-A-T research", "Kevin Indig SEO framework"]
+    },
+
+    {
+      "category": "aeo_fundamentals",
+      "query_pattern": "question-based headings AEO signal",
+      "content": {
+        "title": "The #1 AEO Signal: Question-Based Headings (Emilia Möller)",
+        "summary": "The single highest-impact AEO change on any page: rewrite H2/H3 headings as the exact questions customers type into ChatGPT and Google. AI systems match user queries to content by looking for literal question phrasing in headings.",
+        "the_signal": {
+          "rule": "Every H2 and H3 heading on a service, product, or blog page should be phrased as a question — the exact question a customer would type into ChatGPT, Perplexity, or Google.",
+          "why": "AI search systems are built on question-answer matching. When a user asks 'What does an osteopath treat?', the AI looks for pages with that exact phrasing as a heading. A page with the heading 'Our Services' gets skipped. A page with 'What conditions does osteopathy treat?' gets cited.",
+          "source": "Emilia Möller — cited in Pemba AI audit system as '#1 AEO signal'"
+        },
+        "before_after_examples": [
+          {
+            "before": "Our Services",
+            "after": "What services does [business] offer?",
+            "business_type": "service business"
+          },
+          {
+            "before": "How It Works",
+            "after": "How does [product] work?",
+            "business_type": "SaaS / product"
+          },
+          {
+            "before": "COLDBREW.ANYWHERE.",
+            "after": "What is freeze-dried cold brew coffee?",
+            "business_type": "ecommerce / product"
+          },
+          {
+            "before": "About Us",
+            "after": "Who is [brand name] and what do we do?",
+            "business_type": "any"
+          },
+          {
+            "before": "Pricing",
+            "after": "How much does [product/service] cost?",
+            "business_type": "any"
+          },
+          {
+            "before": "Benefits",
+            "after": "What are the benefits of [product/service]?",
+            "business_type": "any"
+          },
+          {
+            "before": "Treatment Areas",
+            "after": "What conditions can osteopathy treat?",
+            "business_type": "health / clinic"
+          }
+        ],
+        "implementation_steps": [
+          "Audit every H2 and H3 on your key pages — list all headings",
+          "For each heading: ask 'what question would a customer type to land on this section?'",
+          "Rewrite the heading as that exact question",
+          "Write an answer-first paragraph immediately after (40-60 words, complete standalone answer)",
+          "Add FAQPage schema for the Q&A pairs you create",
+          "Repeat for all pages — prioritise: homepage, about, pricing, services/products, FAQ page"
+        ],
+        "answer_format": {
+          "rule": "The paragraph immediately under each question heading must be a complete, standalone answer in 40-60 words. Lead with the answer — not background context.",
+          "good_example": "Osteopathy treats musculoskeletal conditions including back pain, neck pain, shoulder injuries, headaches, and sports injuries. It uses hands-on techniques to improve joint mobility, reduce muscle tension, and support the body's natural healing. Most patients see improvement within 2-3 sessions.",
+          "bad_example": "At Sherbourne House, our experienced team of practitioners takes a holistic approach to your health and wellbeing, drawing on years of clinical experience to provide tailored treatment plans that address your individual needs and goals."
+        },
+        "ai_impact": "80% AI visibility improvement — rated 'Critical' in Pemba audit system",
+        "priority": "P1 — do this before any other content changes",
+        "applies_to": ["service businesses", "SaaS", "ecommerce", "local businesses", "any site with service/product pages"]
+      },
+      "sources": ["Emilia Möller — #1 AEO signal", "Pemba AI audit system (80% AI impact rating)", "Pemba visibility checklist AEO section"]
+    },
+
+    {
+      "category": "keyword_research",
+      "query_pattern": "AI SEO keyword targets for SaaS agencies",
+      "content": {
+        "title": "Real Keyword Campaign: B2B AI SEO SaaS",
+        "summary": "Actual keyword targets used in a live AEO/GEO campaign for an AI SEO platform targeting digital agencies. Data from Sailor campaigns April-May 2026.",
+        "keywords": [
+          {
+            "keyword": "AI SEO platform",
+            "page": "/",
+            "intent": "buying",
+            "competition": "Medium",
+            "notes": "Head term. Target homepage. Include in title, H1, and Organization schema description."
+          },
+          {
+            "keyword": "white-label SEO software",
+            "page": "/blog",
+            "intent": "buying",
+            "competition": "Medium",
+            "notes": "Agency-specific buying intent. Strong for reseller ICP. Target blog index or dedicated landing page."
+          },
+          {
+            "keyword": "ai seo tool for agencies",
+            "page": "/about",
+            "intent": "problem-aware",
+            "competition": "Low",
+            "notes": "Long-tail variant. Lower competition. Use on about/mission page to capture early funnel."
+          },
+          {
+            "keyword": "AI SEO audit",
+            "page": "/free-audit",
+            "intent": "buying",
+            "competition": "Low-Medium",
+            "notes": "Lead gen intent. Strong fit for free-trial or audit landing page. High conversion potential."
+          },
+          {
+            "keyword": "white-label SEO platform",
+            "page": "/blog",
+            "intent": "buying",
+            "competition": "Medium",
+            "notes": "Variant of white-label SEO software. Include in same content cluster."
+          }
+        ],
+        "gsc_results": {
+          "context": "After 4 weeks of consistent on-page + schema optimisation",
+          "pages": [
+            {"page": "/", "avg_position": 5.4, "clicks": 1, "impressions": 30},
+            {"page": "/about", "avg_position": 2.6, "clicks": 1, "impressions": 18},
+            {"page": "/pricing", "avg_position": 5.2, "clicks": 0, "impressions": 13},
+            {"page": "/services", "avg_position": 4.8, "clicks": 0, "impressions": 20}
+          ],
+          "note": "Early-stage site, new domain. Impressions more meaningful than clicks at this stage — indicates indexation and topical relevance is building."
+        },
+        "priority": "Reference — use as benchmark for similar SaaS campaigns",
+        "applies_to": ["B2B SaaS", "AI tools", "agency software", "white-label products"]
+      },
+      "sources": ["Sailor campaign data April-May 2026", "GSC data via Pemba DataForSEO integration"]
+    }
+
+  ]
+}

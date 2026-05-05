@@ -1,0 +1,26 @@
+{
+  "rewrites": [
+    { "source": "/.well-known/agent.json", "destination": "/public/.well-known/agent.json" },
+    { "source": "/api/agent-card", "destination": "/api/agent?agent-card=true" }
+  ],
+  "headers": [
+    {
+      "source": "/.well-known/agent.json",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Content-Type", "value": "application/json" }
+      ]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
+      ]
+    }
+  ],
+  "functions": {
+    "api/agent.ts": {
+      "maxDuration": 60
+    }
+  }
+}
