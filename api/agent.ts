@@ -16,7 +16,7 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { runAgent } from "../src/agent.ts";
+import { runAgent } from "../src/agent";
 
 const PRICE_PER_QUERY_USDC = 0.05;
 const FREE_TIER_QUERIES = 3;
