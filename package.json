@@ -2,7 +2,6 @@
   "name": "aeonos",
   "version": "1.0.0",
   "description": "AEONOS (AEON.OS) — AEO/GEO specialist agent with Norg MCP + x402 + A2A",
-  "type": "module",
   "scripts": {
     "dev": "vercel dev",
     "seed": "bun run seed/seed.ts",
