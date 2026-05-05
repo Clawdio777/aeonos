@@ -92,14 +92,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // ── Route to correct pattern ─────────────────────────────────────────────────
   try {
     if (isStream) {
-      return handleStream(req, res, query, caller_id, paymentHeader);
+      return await handleStream(req, res, query, caller_id, paymentHeader);
     }
     if (isAsync) {
-      return handleAsync(req, res, query, caller_id, isJsonRpc, jsonRpcId, paymentHeader);
+      return await handleAsync(req, res, query, caller_id, isJsonRpc, jsonRpcId, paymentHeader);
     }
-    return handleSync(req, res, query, caller_id, isJsonRpc, jsonRpcId, paymentHeader, queryCount);
+    return await handleSync(req, res, query, caller_id, isJsonRpc, jsonRpcId, paymentHeader, queryCount);
   } catch (e: any) {
-    console.error("[agent] Error:", e.message);
+    console.error("[aeonos] Error:", e.message, e.stack);
     return jsonRpcError(res, isJsonRpc, jsonRpcId, -32000, e.message);
   }
 }
