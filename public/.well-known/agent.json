@@ -1,0 +1,68 @@
+{
+  "name": "AEONOS",
+  "description": "Specialist AEO/GEO knowledge agent (AEON.OS). Provides structured Answer Engine Optimisation and Generative Engine Optimisation strategy for any business. Backed by live Norg.ai data + real campaign knowledge (Emilia Möller Four Layers framework). Persistent per-caller memory across sessions.",
+  "url": "https://aeonos.vercel.app/api/agent",
+  "version": "1.0.0",
+  "protocolVersion": "0.2.1",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false,
+    "stateTransitionHistory": true
+  },
+  "skills": [
+    {
+      "id": "aeo_optimisation",
+      "name": "AEO Optimisation",
+      "description": "Full AEO audit and strategy: on-page, schema, llms.txt, E-E-A-T, Emilia Möller 5-Part AI Inclusion Check, keyword targeting, and implementation roadmap (P1/P2/P3).",
+      "inputModes": ["text"],
+      "outputModes": ["text", "json"],
+      "examples": [
+        "Audit mysite.com for AEO readiness",
+        "What schema markup should I add to my pricing page?",
+        "Run Emilia Möller's AI inclusion check on example.com"
+      ]
+    },
+    {
+      "id": "geo_strategy",
+      "name": "GEO Strategy",
+      "description": "Generative Engine Optimisation: getting cited by ChatGPT, Perplexity, Claude, and Google AI Overviews. llms.txt, FAQ schema, entity markup, question-based headings (#1 AEO signal).",
+      "inputModes": ["text"],
+      "outputModes": ["text"],
+      "examples": [
+        "How do I get cited by Perplexity for my target keywords?",
+        "Write an llms.txt for my SaaS product",
+        "What GEO tactics should I prioritise this month?"
+      ]
+    },
+    {
+      "id": "persistent_memory",
+      "name": "Persistent Caller Memory",
+      "description": "Remembers your site, keywords, and strategy context across sessions. No need to re-explain your business on every query.",
+      "inputModes": ["text"],
+      "outputModes": ["text"],
+      "examples": [
+        "Remember that I'm targeting 'AI booking software' for beauty salons",
+        "What keywords have I targeted before?"
+      ]
+    },
+    {
+      "id": "progress_report",
+      "name": "AEO Progress Report",
+      "description": "Structured progress report with Four Layers scores, what's working, what's not, and the next three actions.",
+      "inputModes": ["text"],
+      "outputModes": ["text", "json"],
+      "examples": [
+        "Generate a progress report for mysite.com",
+        "What's working in my AEO strategy so far?"
+      ]
+    }
+  ],
+  "pricing": {
+    "default": "0.05 USDC per query",
+    "free_tier": "First 3 queries free",
+    "bulk": "0.03 USDC per query (10+ queries/session)"
+  },
+  "protocols": ["x402", "a2a"],
+  "network": "base",
+  "payment_address": ""
+}
