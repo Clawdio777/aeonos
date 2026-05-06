@@ -18,7 +18,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { runAgent } from "../src/agent";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { verify, settle } = require("x402") as {
+const { verify, settle } = require("x402/verify") as {
   verify: (p: any, r: any) => Promise<{ isValid: boolean; invalidReason?: string }>;
   settle: (p: any, r: any) => Promise<{ success: boolean; errorReason?: string; transaction: string; network: string }>;
 };
