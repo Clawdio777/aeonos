@@ -369,7 +369,7 @@ function buildPaymentRequirements(req: VercelRequest): PaymentRequirements {
     resource:           `${base}/api/agent` as `${string}://${string}`,
     description:        "AEONOS AEO/GEO query — 0.15 USDC",
     mimeType:           "application/json",
-    payTo:              process.env.PAYMENT_ADDRESS || "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc",
+    payTo:              (process.env.PAYMENT_ADDRESS || "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc").trim(),
     maxTimeoutSeconds:  300,
     asset:              "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC on Base
   };
