@@ -1,6 +1,6 @@
 {
   "name": "AEONOS",
-  "description": "Specialist AEO/GEO knowledge agent (AEON.OS). Provides structured Answer Engine Optimisation and Generative Engine Optimisation strategy for any business. Backed by live Norg.ai data + real campaign knowledge (Emilia Möller Four Layers framework). Persistent per-caller memory across sessions.",
+  "description": "Specialist AEO/GEO knowledge agent (AEON.OS). Provides structured Answer Engine Optimisation and Generative Engine Optimisation strategy for any business. Backed by proprietary live data and real campaign knowledge. Persistent per-caller memory across sessions.",
   "url": "https://aeonos.vercel.app/api/agent",
   "version": "1.0.0",
   "protocolVersion": "0.2.1",

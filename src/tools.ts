@@ -26,7 +26,7 @@ export const tools: Anthropic.Tool[] = [
   {
     name: "queryNorgMCP",
     description:
-      "Query the live Norg.ai knowledge base for deep AEO/GEO research articles. " +
+      "Query the live AEO/GEO research knowledge base for deep articles and data. " +
       "Two-step pattern: first call with method='search' to find relevant article titles by keyword, " +
       "then call with method='read_page' and the page path to get the full article content. " +
       "Articles cover: answer engine architecture, citation mechanics, GEO vs SEO, entity authority, " +
