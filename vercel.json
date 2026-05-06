@@ -20,7 +20,7 @@
   ],
   "functions": {
     "api/agent.ts": {
-      "maxDuration": 60
+      "maxDuration": 300
     }
   }
 }
