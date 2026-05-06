@@ -1,7 +1,7 @@
 {
   "name": "AEONOS",
   "description": "Specialist AEO/GEO knowledge agent (AEON.OS). Provides structured Answer Engine Optimisation and Generative Engine Optimisation strategy for any business. Backed by proprietary live data and real campaign knowledge. Persistent per-caller memory across sessions.",
-  "url": "https://aeonos.vercel.app/api/agent",
+  "url": "https://aeonos-fawn.vercel.app/api/agent",
   "version": "1.0.0",
   "protocolVersion": "0.2.1",
   "capabilities": {
@@ -64,5 +64,5 @@
   },
   "protocols": ["x402", "a2a"],
   "network": "base",
-  "payment_address": ""
+  "payment_address": "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc"
 }
