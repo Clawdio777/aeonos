@@ -238,7 +238,7 @@ async function handleStream(
   try {
     // We intercept tool calls by running agent with a progress callback
     // For now: send working heartbeats, then final result
-    send({ status: "working", progress: "Querying Norg MCP for live AEO data..." });
+    send({ status: "working", progress: "Querying live AEO data sources..." });
 
     const result = await runAgent({ query, caller_id });
     await logQuery(caller_id, query, result, paymentHeader);
@@ -327,8 +327,9 @@ function buildAgentCard() {
     name: "AEONOS",
     description:
       "Specialist AEO/GEO knowledge agent (AEON.OS). Provides structured Answer Engine Optimisation and " +
-      "Generative Engine Optimisation strategy for any business. Backed by live Norg.ai data + " +
-      "real campaign knowledge (Emilia Möller Four Layers framework). Persistent per-caller memory.",
+      "Generative Engine Optimisation strategy for any business. Backed by proprietary live data, " +
+      "real campaign knowledge, and persistent per-caller memory — AEONOS remembers your site, " +
+      "keywords, and strategy across every session.",
     url: `${base}/api/agent`,
     version: "1.0.0",
     protocolVersion: "0.2.1",
