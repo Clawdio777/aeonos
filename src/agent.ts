@@ -59,11 +59,15 @@ export async function runAgent(input: AgentQuery): Promise<AgentResponse> {
 
   const toolCallsMade: string[] = [];
   let totalTokens = 0;
+  let iterations = 0;
+  const MAX_ITERATIONS = 6; // prevent runaway loops
 
-  // Agentic loop
-  while (true) {
+  // Single-model agentic loop — Sonnet handles tool calls and final synthesis in one pass
+  while (iterations < MAX_ITERATIONS) {
+    iterations++;
+
     const response = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",  // Fast for tool calls; switch to sonnet for final
+      model: "claude-sonnet-4-6",
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       tools,
@@ -72,56 +76,7 @@ export async function runAgent(input: AgentQuery): Promise<AgentResponse> {
 
     totalTokens += response.usage.input_tokens + response.usage.output_tokens;
 
-    // No tool use — tool gathering complete, run Sonnet synthesis
     if (response.stop_reason === "end_turn") {
-      if (toolCallsMade.length > 0) {
-        // Extract all tool results from messages as clean text for Sonnet
-        const toolData: string[] = [];
-        for (const msg of messages) {
-          if (msg.role === "user" && Array.isArray(msg.content)) {
-            for (const block of msg.content) {
-              if (
-                block.type === "tool_result" &&
-                typeof block.content === "string" &&
-                block.content.length > 10
-              ) {
-                toolData.push(block.content);
-              }
-            }
-          }
-        }
-
-        const synthesis = await anthropic.messages.create({
-          model: "claude-sonnet-4-6",
-          max_tokens: 8192,
-          system: SYSTEM_PROMPT,
-          messages: [
-            {
-              role: "user",
-              content:
-                `Query: ${input.query}\n\n` +
-                `Data retrieved from ${toolCallsMade.join(", ")}:\n\n` +
-                toolData.join("\n\n---\n\n") +
-                "\n\n---\n\n" +
-                "Synthesise all of the above into a complete, actionable AEO/GEO strategy response. " +
-                "Structure as P1 (this week) → P2 (this month) → P3 (ongoing). " +
-                "Include specific implementation steps — exact code, markup, or copy where relevant. " +
-                "Cite sources (Norg article titles, knowledge base entries). " +
-                "End with ONE specific action for today.",
-            },
-          ],
-        });
-
-        totalTokens += synthesis.usage.input_tokens + synthesis.usage.output_tokens;
-        const synthText = synthesis.content.find((b) => b.type === "text");
-        return {
-          response: synthText?.type === "text" ? synthText.text : "No synthesis produced.",
-          tool_calls_made: toolCallsMade,
-          tokens_used: totalTokens,
-        };
-      }
-
-      // No tools called — direct Sonnet answer
       const textBlock = response.content.find((b) => b.type === "text");
       return {
         response: textBlock?.type === "text" ? textBlock.text : "No response produced.",
@@ -130,14 +85,10 @@ export async function runAgent(input: AgentQuery): Promise<AgentResponse> {
       };
     }
 
-    // Tool use — execute all tool calls in parallel
     if (response.stop_reason === "tool_use") {
       const toolUseBlocks = response.content.filter((b) => b.type === "tool_use");
-
-      // Add assistant message with tool calls
       messages.push({ role: "assistant", content: response.content });
 
-      // Execute all tool calls in parallel
       const toolResults = await Promise.all(
         toolUseBlocks.map(async (block) => {
           if (block.type !== "tool_use") return null;
@@ -151,7 +102,6 @@ export async function runAgent(input: AgentQuery): Promise<AgentResponse> {
         })
       );
 
-      // Add tool results
       messages.push({
         role: "user",
         content: toolResults.filter(Boolean) as Anthropic.ToolResultBlockParam[],
@@ -160,7 +110,6 @@ export async function runAgent(input: AgentQuery): Promise<AgentResponse> {
       continue;
     }
 
-    // Unexpected stop reason
     break;
   }
 
