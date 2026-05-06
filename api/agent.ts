@@ -294,7 +294,7 @@ async function logQuery(
     db.from("query_log").insert({
       caller_id,
       query,
-      norg_data_used: result.tool_calls_made.includes("queryNorgMCP"),
+      norg_data_used: result.tool_calls_made.includes("queryLiveResearch"),
       knowledge_entries_hit: result.tool_calls_made.filter(t => t === "retrieveSharedAEO").length,
       response_tokens: result.tokens_used,
       payment_usdc: paymentHeader ? PRICE_PER_QUERY_USDC : 0,
@@ -344,13 +344,13 @@ function buildAgentCard() {
         name: "AEO Optimisation",
         description:
           "Full AEO audit and strategy: on-page, schema, llms.txt, E-E-A-T, " +
-          "Emilia Möller 5-Part AI Inclusion Check, keyword targeting, P1/P2/P3 roadmap.",
+          "AEONOS 5-pillar AI inclusion check, keyword targeting, P1/P2/P3 roadmap.",
         inputModes: ["text"],
         outputModes: ["text", "json"],
         examples: [
           "Audit mysite.com for AEO readiness",
           "What schema markup should I add to my pricing page?",
-          "Run Emilia Möller's AI inclusion check on example.com",
+          "Run the AEONOS AI inclusion check on example.com",
         ],
       },
       {
