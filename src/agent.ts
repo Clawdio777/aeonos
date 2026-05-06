@@ -72,43 +72,59 @@ export async function runAgent(input: AgentQuery): Promise<AgentResponse> {
 
     totalTokens += response.usage.input_tokens + response.usage.output_tokens;
 
-    // No tool use — this is the final response from the tool-gathering loop
+    // No tool use — tool gathering complete, run Sonnet synthesis
     if (response.stop_reason === "end_turn") {
-      const textBlock = response.content.find((b) => b.type === "text");
-      const haikuDraft = textBlock?.type === "text" ? textBlock.text : "";
-
-      // Always run Sonnet synthesis after tool calls — Haiku gathers, Sonnet writes
       if (toolCallsMade.length > 0) {
+        // Extract all tool results from messages as clean text for Sonnet
+        const toolData: string[] = [];
+        for (const msg of messages) {
+          if (msg.role === "user" && Array.isArray(msg.content)) {
+            for (const block of msg.content) {
+              if (
+                block.type === "tool_result" &&
+                typeof block.content === "string" &&
+                block.content.length > 10
+              ) {
+                toolData.push(block.content);
+              }
+            }
+          }
+        }
+
         const synthesis = await anthropic.messages.create({
           model: "claude-sonnet-4-6",
           max_tokens: 8192,
           system: SYSTEM_PROMPT,
           messages: [
-            ...messages,
-            { role: "assistant", content: response.content },
             {
               role: "user",
               content:
-                "Now synthesise all the data you retrieved into a complete, actionable AEO/GEO strategy response. " +
-                "Structure it as P1 (this week) → P2 (this month) → P3 (ongoing). " +
+                `Query: ${input.query}\n\n` +
+                `Data retrieved from ${toolCallsMade.join(", ")}:\n\n` +
+                toolData.join("\n\n---\n\n") +
+                "\n\n---\n\n" +
+                "Synthesise all of the above into a complete, actionable AEO/GEO strategy response. " +
+                "Structure as P1 (this week) → P2 (this month) → P3 (ongoing). " +
                 "Include specific implementation steps — exact code, markup, or copy where relevant. " +
-                "Cite your sources (Norg article titles, knowledge base entries). " +
+                "Cite sources (Norg article titles, knowledge base entries). " +
                 "End with ONE specific action for today.",
             },
           ],
         });
+
         totalTokens += synthesis.usage.input_tokens + synthesis.usage.output_tokens;
         const synthText = synthesis.content.find((b) => b.type === "text");
         return {
-          response: synthText?.type === "text" ? synthText.text : haikuDraft,
+          response: synthText?.type === "text" ? synthText.text : "No synthesis produced.",
           tool_calls_made: toolCallsMade,
           tokens_used: totalTokens,
         };
       }
 
-      // No tools called — direct answer (simple factual queries)
+      // No tools called — direct Sonnet answer
+      const textBlock = response.content.find((b) => b.type === "text");
       return {
-        response: haikuDraft,
+        response: textBlock?.type === "text" ? textBlock.text : "No response produced.",
         tool_calls_made: toolCallsMade,
         tokens_used: totalTokens,
       };
