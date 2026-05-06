@@ -247,9 +247,10 @@ function acpEnv() {
     ...process.env,
     HOME: process.env.HOME || homedir(),
     PATH: `${ACP_BIN.replace(/\/acp$/, "")}:/usr/local/bin:/usr/bin:/bin:${process.env.PATH || ""}`,
-    ...(process.env.XDG_CONFIG_HOME && { XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME }),
-    ...(process.env.XDG_DATA_HOME   && { XDG_DATA_HOME:   process.env.XDG_DATA_HOME   }),
-    ...(process.env.ACP_CONFIG_DIR  && { ACP_CONFIG_DIR:  process.env.ACP_CONFIG_DIR  }),
+    ...(process.env.XDG_CONFIG_HOME          && { XDG_CONFIG_HOME:          process.env.XDG_CONFIG_HOME          }),
+    ...(process.env.XDG_DATA_HOME            && { XDG_DATA_HOME:            process.env.XDG_DATA_HOME            }),
+    ...(process.env.ACP_CONFIG_DIR           && { ACP_CONFIG_DIR:           process.env.ACP_CONFIG_DIR           }),
+    ...(process.env.DBUS_SESSION_BUS_ADDRESS && { DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS }),
   };
 }
 
