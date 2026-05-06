@@ -17,6 +17,24 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { runAgent } from "../src/agent";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { verify, settle } = require("x402") as {
+  verify: (p: any, r: any) => Promise<{ isValid: boolean; invalidReason?: string }>;
+  settle: (p: any, r: any) => Promise<{ success: boolean; errorReason?: string; transaction: string; network: string }>;
+};
+type PaymentPayload = any;
+type PaymentRequirements = {
+  scheme: "exact";
+  network: string;
+  maxAmountRequired: string;
+  resource: string;
+  description: string;
+  mimeType: string;
+  payTo: string;
+  maxTimeoutSeconds: number;
+  asset: string;
+  extra?: Record<string, unknown>;
+};
 
 const PRICE_PER_QUERY_USDC = 0.15;
 const FREE_TIER_QUERIES = 3;
@@ -32,6 +50,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Payment, Accept");
   res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+  res.setHeader("Access-Control-Expose-Headers", "X-Payment-Required-Response, X-Payment-Response");
 
   if (req.method === "OPTIONS") return res.status(200).end();
 
@@ -69,25 +88,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return jsonRpcError(res, isJsonRpc, jsonRpcId, -32602, "Missing query");
   }
 
-  // ── x402 payment check ───────────────────────────────────────────────────────
-  const paymentHeader = req.headers["x-payment"] as string | undefined;
+  // ── x402 payment gate (official Coinbase x402 format) ────────────────────────
+  const xPaymentHeader = req.headers["x-payment"] as string | undefined;
   const queryCount = await getQueryCount(caller_id);
 
-  if (queryCount >= FREE_TIER_QUERIES && !paymentHeader) {
-    res.setHeader("X-Payment-Required", "true");
-    res.setHeader("X-Payment-Amount", `${PRICE_PER_QUERY_USDC} USDC`);
-    res.setHeader("X-Payment-Network", "base");
-    res.setHeader("X-Payment-Address", process.env.PAYMENT_ADDRESS || "");
-    return res.status(402).json({
-      error: "Payment required",
-      amount: PRICE_PER_QUERY_USDC,
-      currency: "USDC",
-      network: "base",
-      payment_address: process.env.PAYMENT_ADDRESS,
-      free_queries_used: queryCount,
-      note: `First ${FREE_TIER_QUERIES} queries free. After that: ${PRICE_PER_QUERY_USDC} USDC/query.`,
-    });
+  if (queryCount >= FREE_TIER_QUERIES) {
+    const paymentReqs = buildPaymentRequirements(req);
+
+    if (!xPaymentHeader) {
+      return send402(res, paymentReqs);
+    }
+
+    // Decode + verify
+    let paymentPayload: PaymentPayload;
+    try {
+      paymentPayload = JSON.parse(Buffer.from(xPaymentHeader, "base64").toString("utf8"));
+    } catch {
+      return send402(res, paymentReqs, "invalid_payment");
+    }
+
+    const verifyResult = await verify(paymentPayload, paymentReqs);
+    if (!verifyResult.isValid) {
+      return send402(res, paymentReqs, verifyResult.invalidReason);
+    }
+
+    // Settle — locks in the payment on-chain
+    const settleResult = await settle(paymentPayload, paymentReqs);
+    if (!settleResult.success) {
+      return send402(res, paymentReqs, settleResult.errorReason);
+    }
+
+    // Signal settlement to the client
+    res.setHeader(
+      "X-Payment-Response",
+      Buffer.from(JSON.stringify(settleResult)).toString("base64")
+    );
   }
+
+  // paymentHeader used downstream for logging (paid vs free)
+  const paymentHeader = xPaymentHeader;
 
   // ── Route to correct pattern ─────────────────────────────────────────────────
   try {
@@ -319,10 +358,44 @@ function jsonRpcError(
   return res.status(code === -32602 ? 400 : 500).json({ error: message });
 }
 
+// ── x402 helpers ──────────────────────────────────────────────────────────────
+
+function buildPaymentRequirements(req: VercelRequest): PaymentRequirements {
+  const base = process.env.AGENT_BASE_URL || "https://aeonos-fawn.vercel.app";
+  return {
+    scheme:             "exact",
+    network:            "base",
+    maxAmountRequired:  "150000", // 0.15 USDC — 6 decimals
+    resource:           `${base}/api/agent` as `${string}://${string}`,
+    description:        "AEONOS AEO/GEO query — 0.15 USDC",
+    mimeType:           "application/json",
+    payTo:              process.env.PAYMENT_ADDRESS || "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc",
+    maxTimeoutSeconds:  300,
+    asset:              "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC on Base
+  };
+}
+
+function send402(
+  res: VercelResponse,
+  paymentReqs: PaymentRequirements,
+  errorReason?: string
+) {
+  const body = {
+    x402Version: 1,
+    error:   errorReason ?? "X-Payment header required",
+    accepts: [paymentReqs],
+  };
+  res.setHeader(
+    "X-Payment-Required-Response",
+    Buffer.from(JSON.stringify(body)).toString("base64")
+  );
+  return res.status(402).json(body);
+}
+
 // ── A2A Agent Card ─────────────────────────────────────────────────────────────
 
 function buildAgentCard() {
-  const base = process.env.AGENT_BASE_URL || "https://aeonos.vercel.app";
+  const base = process.env.AGENT_BASE_URL || "https://aeonos-fawn.vercel.app";
   return {
     name: "AEONOS",
     description:
