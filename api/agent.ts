@@ -18,7 +18,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { runAgent } from "../src/agent";
 
-const PRICE_PER_QUERY_USDC = 0.05;
+const PRICE_PER_QUERY_USDC = 0.15;
 const FREE_TIER_QUERIES = 3;
 
 const db = createClient(
@@ -386,7 +386,7 @@ function buildAgentCard() {
     pricing: {
       default: `${PRICE_PER_QUERY_USDC} USDC per query`,
       free_tier: `First ${FREE_TIER_QUERIES} queries free`,
-      bulk: "0.03 USDC per query (10+ queries/session)",
+      bulk: "0.10 USDC per query (10+ queries/session)",
     },
     protocols: ["x402", "a2a"],
     network: "base",

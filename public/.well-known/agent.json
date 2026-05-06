@@ -58,9 +58,9 @@
     }
   ],
   "pricing": {
-    "default": "0.05 USDC per query",
+    "default": "0.15 USDC per query",
     "free_tier": "First 3 queries free",
-    "bulk": "0.03 USDC per query (10+ queries/session)"
+    "bulk": "0.10 USDC per query (10+ queries/session)"
   },
   "protocols": ["x402", "a2a"],
   "network": "base",
