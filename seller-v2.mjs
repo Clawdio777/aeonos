@@ -47,7 +47,7 @@ const OFFERING_FEES = {
 
 // Sweep: auto-transfer USDC earnings to personal Base wallet after each job
 const SWEEP_DEST      = "0x282d873b3737144b45c507320c12f22edfd51fe3";
-const SWEEP_THRESHOLD = 0.50; // USDC — only sweep if balance ≥ this
+const SWEEP_THRESHOLD = 10.00; // USDC — only sweep if balance ≥ this
 const USDC_CONTRACT   = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"; // USDC on Base
 
 // Log directory — Railway uses /data/logs, Mac uses ~/Library/Logs/aeonos-seller
