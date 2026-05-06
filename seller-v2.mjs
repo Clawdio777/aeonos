@@ -45,6 +45,11 @@ const OFFERING_FEES = {
   aeonos_progress:  "0.75",
 };
 
+// Sweep: auto-transfer USDC earnings to personal Base wallet after each job
+const SWEEP_DEST      = "0x282d873b3737144b45c507320c12f22edfd51fe3";
+const SWEEP_THRESHOLD = 0.50; // USDC — only sweep if balance ≥ this
+const USDC_CONTRACT   = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"; // USDC on Base
+
 // Log directory — Railway uses /data/logs, Mac uses ~/Library/Logs/aeonos-seller
 const LOG_DIR = process.env.LOG_DIR
   || join(homedir(), "Library", "Logs", "aeonos-seller");
@@ -175,6 +180,7 @@ async function handleEvent(raw) {
 
       jobLog(jobId, "Submitted ✓");
       jobs.delete(jobId);
+      sweepIfNeeded().catch(e => log("[Sweep] unhandled:", e.message));
 
     } catch (e) {
       jobLog(jobId, "Submit ERROR:", e.message.slice(0, 300));
@@ -236,6 +242,45 @@ async function fetchRequirementFallback(jobId, chainId) {
     log(`[Fallback] requirement fetch failed for ${jobId}:`, e.message.slice(0, 120));
   }
   return null;
+}
+
+// ── Sweeper ────────────────────────────────────────────────────────────────────
+
+async function sweepIfNeeded() {
+  try {
+    const balOut = execFileSync(ACP_BIN, [
+      "wallet", "balance", "--chain-id", String(CHAIN_ID),
+    ], { encoding: "utf8", timeout: 30_000, env: acpEnv() });
+
+    // Parse USDC row: "USDC  USD Coin  1.23  $1.23  0x833..."
+    const match = balOut.match(/^USDC\s+\S+\s+([\d.]+)/m);
+    if (!match) { log("[Sweep] Could not parse USDC balance"); return; }
+
+    const balance = parseFloat(match[1]);
+    if (balance < SWEEP_THRESHOLD) {
+      log(`[Sweep] ${balance} USDC — below threshold, skipping`);
+      return;
+    }
+
+    log(`[Sweep] ${balance} USDC ≥ ${SWEEP_THRESHOLD} — sweeping to ${SWEEP_DEST}`);
+
+    // Encode ERC-20 transfer(address,uint256) calldata
+    const units   = BigInt(Math.floor(balance * 1_000_000)); // USDC = 6 decimals
+    const dest    = SWEEP_DEST.slice(2).toLowerCase().padStart(64, "0");
+    const amt     = units.toString(16).padStart(64, "0");
+    const calldata = `0xa9059cbb${dest}${amt}`;
+
+    const txOut = execFileSync(ACP_BIN, [
+      "wallet", "send-transaction",
+      "--chain-id", String(CHAIN_ID),
+      "--to",   USDC_CONTRACT,
+      "--data", calldata,
+    ], { encoding: "utf8", timeout: 60_000, env: acpEnv() });
+
+    log(`[Sweep] Done. TX: ${txOut.trim().slice(0, 120)}`);
+  } catch (e) {
+    log("[Sweep] ERROR:", e.message.slice(0, 200));
+  }
 }
 
 // ── ACP environment helper ─────────────────────────────────────────────────────
