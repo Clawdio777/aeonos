@@ -1,7 +1,7 @@
 /**
  * tools.ts — AEONOS: 5 core tools
  *
- * 1. queryNorgMCP        — Live Norg.ai knowledge (no auth, perpetually fresh)
+ * 1. queryLiveResearch   — Live AEO/GEO knowledge (proprietary data source)
  * 2. retrieveSharedAEO   — AEONOS seeded AEO/GEO knowledge base
  * 3. retrieveCallerMemory — Caller-specific persistent context
  * 4. storeCallerMemory   — Save new context for this caller
@@ -13,7 +13,7 @@ import { createClient } from "@supabase/supabase-js";
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 
-const NORG_MCP_URL = "https://home.norg.ai/mcp";
+const LIVE_RESEARCH_URL = "https://home.norg.ai/mcp";
 
 const db = createClient(
   process.env.SUPABASE_URL!,
@@ -24,7 +24,7 @@ const db = createClient(
 
 export const tools: Anthropic.Tool[] = [
   {
-    name: "queryNorgMCP",
+    name: "queryLiveResearch",
     description:
       "Query the live AEO/GEO research knowledge base for deep articles and data. " +
       "Two-step pattern: first call with method='search' to find relevant article titles by keyword, " +
@@ -151,8 +151,8 @@ export async function executeTool(
   input: Record<string, any>
 ): Promise<string> {
   switch (name) {
-    case "queryNorgMCP":
-      return await runNorgMCP(input);
+    case "queryLiveResearch":
+      return await runLiveResearch(input);
     case "retrieveSharedAEO":
       return await runRetrieveSharedAEO(input);
     case "retrieveCallerMemory":
@@ -164,9 +164,9 @@ export async function executeTool(
   }
 }
 
-// ── Norg MCP ───────────────────────────────────────────────────────────────────
+// ── Live Research ──────────────────────────────────────────────────────────────
 
-async function runNorgMCP(input: Record<string, any>): Promise<string> {
+async function runLiveResearch(input: Record<string, any>): Promise<string> {
   const { method, query, path, documentType } = input;
 
   try {
@@ -180,18 +180,18 @@ async function runNorgMCP(input: Record<string, any>): Promise<string> {
         id: Date.now(),
         params: { uri },
       };
-      const res = await fetch(NORG_MCP_URL, {
+      const res = await fetch(LIVE_RESEARCH_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(15000),
       });
-      if (!res.ok) return `Norg MCP error ${res.status}: ${await res.text()}`;
+      if (!res.ok) return `Research API error ${res.status}: ${await res.text()}`;
       const data = await res.json() as {
         result?: { contents?: { text: string }[] };
         error?: { message: string };
       };
-      if (data.error) return `Norg MCP error: ${data.error.message}`;
+      if (data.error) return `Research API error: ${data.error.message}`;
       const content = data.result?.contents?.[0]?.text || "No content returned";
       return content.length > 8000 ? content.substring(0, 8000) + "\n[truncated]" : content;
     }
@@ -215,27 +215,27 @@ async function runNorgMCP(input: Record<string, any>): Promise<string> {
       body.params.arguments = documentType ? { documentType } : {};
     }
 
-    const res = await fetch(NORG_MCP_URL, {
+    const res = await fetch(LIVE_RESEARCH_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(15000),
     });
 
-    if (!res.ok) return `Norg MCP error ${res.status}: ${await res.text()}`;
+    if (!res.ok) return `Research API error ${res.status}: ${await res.text()}`;
 
     const data = await res.json() as {
       result?: { content?: { type: string; text: string }[] };
       error?: { message: string };
     };
 
-    if (data.error) return `Norg MCP error: ${data.error.message}`;
+    if (data.error) return `Research API error: ${data.error.message}`;
 
     const content = data.result?.content?.[0]?.text || "No content returned";
     return content.length > 6000 ? content.substring(0, 6000) + "\n[truncated]" : content;
 
   } catch (e: any) {
-    return `Norg MCP fetch error: ${e.message}`;
+    return `Research API fetch error: ${e.message}`;
   }
 }
 

@@ -13,13 +13,13 @@
     {
       "id": "aeo_optimisation",
       "name": "AEO Optimisation",
-      "description": "Full AEO audit and strategy: on-page, schema, llms.txt, E-E-A-T, Emilia Möller 5-Part AI Inclusion Check, keyword targeting, and implementation roadmap (P1/P2/P3).",
+      "description": "Full AEO audit and strategy: on-page, schema, llms.txt, E-E-A-T, AEONOS 5-pillar AI inclusion check, keyword targeting, and implementation roadmap (P1/P2/P3).",
       "inputModes": ["text"],
       "outputModes": ["text", "json"],
       "examples": [
         "Audit mysite.com for AEO readiness",
         "What schema markup should I add to my pricing page?",
-        "Run Emilia Möller's AI inclusion check on example.com"
+        "Run the AEONOS AI inclusion check on example.com"
       ]
     },
     {
