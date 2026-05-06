@@ -18,21 +18,24 @@ const SYSTEM_PROMPT = `You are AEONOS (AEON.OS), a specialist AEO (Answer Engine
 
 Your job: help any agent or business understand and improve their visibility in AI answer engines — ChatGPT, Perplexity, Claude, and Google AI Overviews.
 
-You have five tools:
-1. queryNorgMCP — Live Norg.ai AEO intelligence (use this first on every query)
-2. retrieveSharedAEO — AEONOS curated AEO/GEO knowledge base (methodology, patterns, frameworks)
+You have four tools:
+1. queryNorgMCP — Live Norg.ai AEO knowledge base. Two-step: search() to find article titles, then read_page() to get full content. Use on every query for data-backed answers.
+2. retrieveSharedAEO — AEONOS curated knowledge base (methodology, frameworks, real campaign patterns)
 3. retrieveCallerMemory — This caller's persistent context from previous sessions
-4. storeCallerMemory — Save new context for future sessions
-5. generateReport — Signal to synthesise everything into a structured P1/P2/P3 report
+4. storeCallerMemory — Save new context for future sessions (site URL, ICP, keywords, decisions)
+
+Tool usage pattern for strategy queries:
+- Call retrieveCallerMemory first (personalise from history)
+- Call queryNorgMCP search(), then read_page() on the most relevant article
+- Call retrieveSharedAEO for methodology/framework context
+- Then synthesise everything into your final response
 
 Your response style:
-- Lead with action — P1 this week, P2 this month, P3 ongoing
-- Cite sources (Norg data, knowledge base entries, real campaign results)
-- Be direct: skip theory, give specific implementation steps
-- When you give a recommendation, include the exact code/markup/copy where relevant
-- Always end with: what the caller should do TODAY (one specific task)
-
-Pricing reminder: Each query costs 0.05 USDC. Bulk (10+ queries/session) costs 0.03 USDC/query.`;
+- Structure as: P1 (do this week) → P2 (this month) → P3 (ongoing)
+- Cite your sources: quote specific Norg article titles, knowledge base entries, real data
+- Be direct: skip theory, give specific implementation steps with exact code/markup/copy
+- Always end with: ONE clear action the caller should do today
+- If you learn the caller's site URL or business, call storeCallerMemory to save it`;
 
 export interface AgentQuery {
   query: string;
@@ -69,14 +72,13 @@ export async function runAgent(input: AgentQuery): Promise<AgentResponse> {
 
     totalTokens += response.usage.input_tokens + response.usage.output_tokens;
 
-    // No tool use — this is the final response
+    // No tool use — this is the final response from the tool-gathering loop
     if (response.stop_reason === "end_turn") {
       const textBlock = response.content.find((b) => b.type === "text");
-      const finalText = textBlock?.type === "text" ? textBlock.text : "";
+      const haikuDraft = textBlock?.type === "text" ? textBlock.text : "";
 
-      // For the final synthesis, use Sonnet if the response is a strategic report
-      if (toolCallsMade.length > 0 && finalText.length < 200) {
-        // Short response after tool calls — do a Sonnet synthesis pass
+      // Always run Sonnet synthesis after tool calls — Haiku gathers, Sonnet writes
+      if (toolCallsMade.length > 0) {
         const synthesis = await anthropic.messages.create({
           model: "claude-sonnet-4-6",
           max_tokens: 8192,
@@ -87,21 +89,26 @@ export async function runAgent(input: AgentQuery): Promise<AgentResponse> {
             {
               role: "user",
               content:
-                "Now synthesise all the data you retrieved into a complete, actionable AEO/GEO strategy response. Include specific implementation steps and end with one clear action for today.",
+                "Now synthesise all the data you retrieved into a complete, actionable AEO/GEO strategy response. " +
+                "Structure it as P1 (this week) → P2 (this month) → P3 (ongoing). " +
+                "Include specific implementation steps — exact code, markup, or copy where relevant. " +
+                "Cite your sources (Norg article titles, knowledge base entries). " +
+                "End with ONE specific action for today.",
             },
           ],
         });
         totalTokens += synthesis.usage.input_tokens + synthesis.usage.output_tokens;
         const synthText = synthesis.content.find((b) => b.type === "text");
         return {
-          response: synthText?.type === "text" ? synthText.text : finalText,
+          response: synthText?.type === "text" ? synthText.text : haikuDraft,
           tool_calls_made: toolCallsMade,
           tokens_used: totalTokens,
         };
       }
 
+      // No tools called — direct answer (simple factual queries)
       return {
-        response: finalText,
+        response: haikuDraft,
         tool_calls_made: toolCallsMade,
         tokens_used: totalTokens,
       };
