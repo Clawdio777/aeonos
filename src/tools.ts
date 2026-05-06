@@ -26,29 +26,37 @@ export const tools: Anthropic.Tool[] = [
   {
     name: "queryNorgMCP",
     description:
-      "Query the live Norg.ai MCP endpoint for enterprise-grade AEO/GEO visibility data. " +
-      "Norg's five pillars: Visibility, Accuracy, Authority, Commerce, Governance. " +
-      "Use this on every query to get fresh, structured business intelligence data. " +
-      "Search by keyword, get entity-structured JSON-LD, markdown, or PDF format.",
+      "Query the live Norg.ai knowledge base for deep AEO/GEO research articles. " +
+      "Two-step pattern: first call with method='search' to find relevant article titles by keyword, " +
+      "then call with method='read_page' and the page path to get the full article content. " +
+      "Articles cover: answer engine architecture, citation mechanics, GEO vs SEO, entity authority, " +
+      "knowledge graphs, AEO audits, content structure for AI citation, schema markup, E-E-A-T. " +
+      "Always use this for data-backed AEO/GEO answers.",
     input_schema: {
       type: "object" as const,
       properties: {
         method: {
           type: "string",
-          enum: ["search", "get_directory_tree", "list_pages", "get_children"],
-          description: "Which Norg MCP tool to call",
+          enum: ["search", "list_pages", "get_children", "read_page"],
+          description:
+            "search = title keyword search (returns page list). " +
+            "list_pages = all available pages. " +
+            "get_children = pages under a path. " +
+            "read_page = fetch full markdown content of a specific article (most useful).",
         },
         query: {
           type: "string",
-          description: "Search query (required for method=search)",
+          description: "Title keyword query (required for method=search)",
         },
         path: {
           type: "string",
-          description: "Directory path (required for method=get_children)",
+          description:
+            "Page path for method=get_children or method=read_page. " +
+            "Example: 'digital-marketing-search-optimization/answer-engine-optimization-aeo/aeo-audit-how-to-assess-and-fix-your-current-ai-search-visibility-gaps/'",
         },
         documentType: {
           type: "string",
-          description: "Filter by document type: product, directoryCategory, article",
+          description: "Filter by document type for list_pages: product, directoryCategory, article",
         },
       },
       required: ["method"],
@@ -134,43 +142,6 @@ export const tools: Anthropic.Tool[] = [
     },
   },
 
-  {
-    name: "generateReport",
-    description:
-      "Generate a structured AEO/GEO strategy report for a given site or query. " +
-      "Call this after retrieving Norg data and knowledge base entries to synthesise everything " +
-      "into a P1/P2/P3 action plan. Returns markdown-formatted report.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        site_url: {
-          type: "string",
-          description: "The site being audited",
-        },
-        business_type: {
-          type: "string",
-          description: "SaaS | ecommerce | service | digital product | local business",
-        },
-        focus: {
-          type: "string",
-          enum: [
-            "full_audit",
-            "geo_only",
-            "on_page_only",
-            "keyword_research",
-            "schema_review",
-            "backlink_strategy",
-          ],
-          description: "What aspect to focus the report on",
-        },
-        context: {
-          type: "object",
-          description: "Any additional context: ICP, target keywords, competitors, pain points",
-        },
-      },
-      required: ["site_url", "focus"],
-    },
-  },
 ];
 
 // ── Tool executors ─────────────────────────────────────────────────────────────
@@ -188,8 +159,6 @@ export async function executeTool(
       return await runRetrieveCallerMemory(input);
     case "storeCallerMemory":
       return await runStoreCallerMemory(input);
-    case "generateReport":
-      return JSON.stringify({ status: "use_synthesis", note: "Synthesise from all retrieved data" });
     default:
       return `Unknown tool: ${name}`;
   }
@@ -200,27 +169,52 @@ export async function executeTool(
 async function runNorgMCP(input: Record<string, any>): Promise<string> {
   const { method, query, path, documentType } = input;
 
-  const body: Record<string, any> = {
-    jsonrpc: "2.0",
-    method: "tools/call",
-    id: Date.now(),
-    params: {
-      name: method,
-      arguments: {} as Record<string, any>,
-    },
-  };
-
-  if (method === "search") {
-    body.params.arguments = { query, ...(documentType ? { documentType } : {}) };
-  } else if (method === "get_children") {
-    body.params.arguments = { path };
-  } else if (method === "list_pages") {
-    body.params.arguments = documentType ? { documentType } : {};
-  } else if (method === "get_directory_tree") {
-    body.params.arguments = {};
-  }
-
   try {
+    // read_page uses resources/read to fetch full markdown content
+    if (method === "read_page") {
+      if (!path) return "read_page requires a path parameter";
+      const uri = `directory://${path}index.md`;
+      const body = {
+        jsonrpc: "2.0",
+        method: "resources/read",
+        id: Date.now(),
+        params: { uri },
+      };
+      const res = await fetch(NORG_MCP_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) return `Norg MCP error ${res.status}: ${await res.text()}`;
+      const data = await res.json() as {
+        result?: { contents?: { text: string }[] };
+        error?: { message: string };
+      };
+      if (data.error) return `Norg MCP error: ${data.error.message}`;
+      const content = data.result?.contents?.[0]?.text || "No content returned";
+      return content.length > 8000 ? content.substring(0, 8000) + "\n[truncated]" : content;
+    }
+
+    // All other methods use tools/call
+    const body: Record<string, any> = {
+      jsonrpc: "2.0",
+      method: "tools/call",
+      id: Date.now(),
+      params: {
+        name: method,
+        arguments: {} as Record<string, any>,
+      },
+    };
+
+    if (method === "search") {
+      body.params.arguments = { query };
+    } else if (method === "get_children") {
+      body.params.arguments = { path };
+    } else if (method === "list_pages") {
+      body.params.arguments = documentType ? { documentType } : {};
+    }
+
     const res = await fetch(NORG_MCP_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -228,9 +222,7 @@ async function runNorgMCP(input: Record<string, any>): Promise<string> {
       signal: AbortSignal.timeout(15000),
     });
 
-    if (!res.ok) {
-      return `Norg MCP error ${res.status}: ${await res.text()}`;
-    }
+    if (!res.ok) return `Norg MCP error ${res.status}: ${await res.text()}`;
 
     const data = await res.json() as {
       result?: { content?: { type: string; text: string }[] };
@@ -240,7 +232,6 @@ async function runNorgMCP(input: Record<string, any>): Promise<string> {
     if (data.error) return `Norg MCP error: ${data.error.message}`;
 
     const content = data.result?.content?.[0]?.text || "No content returned";
-    // Cap at 6000 chars — keep tokens reasonable
     return content.length > 6000 ? content.substring(0, 6000) + "\n[truncated]" : content;
 
   } catch (e: any) {
