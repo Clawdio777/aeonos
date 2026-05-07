@@ -465,5 +465,6 @@ function buildAgentCard() {
     network: "base",
     payment_address: process.env.PAYMENT_ADDRESS || "",
     supportedTrust: ["self"],
+    agentURI: "ipfs://Qmc8dpobzt3N5uuiAgeNwc8RU7wXo1MdqTv5tFnE4VRbha",
   };
 }
