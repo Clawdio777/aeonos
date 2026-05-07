@@ -464,5 +464,6 @@ function buildAgentCard() {
     protocols: ["x402", "a2a"],
     network: "base",
     payment_address: process.env.PAYMENT_ADDRESS || "",
+    supportedTrust: ["self"],
   };
 }
