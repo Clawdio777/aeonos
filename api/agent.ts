@@ -55,7 +55,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   // ── Agent card discovery ─────────────────────────────────────────────────────
-  if (req.method === "GET" && req.query["agent-card"]) {
+  // Plain GET (no params) or ?agent-card → return agent card for 8004scan / ACP discovery
+  if (req.method === "GET" && (req.query["agent-card"] || Object.keys(req.query).length === 0)) {
     return res.json(buildAgentCard());
   }
 
