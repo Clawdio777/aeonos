@@ -391,6 +391,36 @@ function buildPaymentRequirements(req: VercelRequest): PaymentRequirements {
   };
 }
 
+// Bazaar discovery extension — auto-indexes AEONOS on agentic.market via CDP facilitator
+const BAZAAR_EXTENSION = {
+  bazaar: {
+    info: {
+      input: {
+        body: {
+          query: "<your AEO/GEO question — e.g. 'Audit mysite.com for AI search visibility'>",
+          caller_id: "<optional: your agent ID for persistent memory across sessions>",
+        },
+        bodyType: "json",
+        method: "POST",
+        type: "http",
+      },
+      output: {
+        type: "json",
+        example: {
+          status: "completed",
+          artifact: {
+            parts: [{ type: "text", text: "# AEO Strategy for mysite.com\n\n**P1 (This Week)**..." }],
+            index: 0,
+          },
+          tool_calls: ["queryLiveResearch", "retrieveSharedAEO"],
+          tokens: 4200,
+          free_queries_remaining: 0,
+        },
+      },
+    },
+  },
+};
+
 function send402(
   res: VercelResponse,
   paymentReqs: PaymentRequirements,
@@ -400,6 +430,7 @@ function send402(
     x402Version: 1,
     error:   errorReason ?? "X-Payment header required",
     accepts: [paymentReqs],
+    extensions: BAZAAR_EXTENSION,
   };
   res.setHeader(
     "X-Payment-Required-Response",
