@@ -481,7 +481,7 @@ function buildAgentCard() {
     network: "base",
     payment_address: process.env.PAYMENT_ADDRESS || "",
     supportedTrust: ["reputation", "crypto-economic"],
-    agentURI: "ipfs://bafkreiebnsrxuqrslubkxtazoaun2mgmm6s7tslmixyx3r3qhnjgdjdpwu",
+    agentURI: "ipfs://bafkreibeuaqom35wkxpj6th4zpunx64gti4sfitfj4btetfn3fadncdds4",
     agentId: 47096,
   };
 }

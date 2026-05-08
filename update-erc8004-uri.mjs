@@ -19,7 +19,7 @@ import { base } from "viem/chains";
 
 const REGISTRY  = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432";
 const AGENT_ID  = 47096n; // owned by 0x4a0D792185d05330C8506B29cC9335fb7820B958
-const IPFS_URI  = "ipfs://bafkreiebnsrxuqrslubkxtazoaun2mgmm6s7tslmixyx3r3qhnjgdjdpwu"; // web service fix — was 404 Virtuals page, now aeonos-fawn.vercel.app
+const IPFS_URI  = "ipfs://bafkreibeuaqom35wkxpj6th4zpunx64gti4sfitfj4btetfn3fadncdds4"; // A2A → /.well-known/agent-card.json, web → app.virtuals.io/acp/agent/...
 
 const ABI = [
   {
