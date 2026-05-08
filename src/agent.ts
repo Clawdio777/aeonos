@@ -71,7 +71,7 @@ export async function runAgent(input: AgentQuery): Promise<AgentResponse> {
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       // Allow more output tokens on the synthesis pass so a full audit fits.
-      max_tokens: forceSynthesis ? 8192 : 4096,
+      max_tokens: forceSynthesis ? 16000 : 8192,
       system: SYSTEM_PROMPT,
       // On the forced-synthesis pass, omit tools entirely so the model must produce text.
       ...(forceSynthesis ? {} : { tools }),
