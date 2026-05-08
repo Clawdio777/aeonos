@@ -2,14 +2,19 @@
   "name": "aeonos",
   "version": "1.0.0",
   "description": "AEONOS (AEON.OS) — AEO/GEO specialist agent with Norg MCP + x402 + A2A",
+  "type": "module",
   "scripts": {
     "dev": "vercel dev",
     "seed": "bun run seed/seed.ts",
     "deploy": "vercel --prod",
     "test:norg": "bun run src/tools.ts"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@coinbase/x402": "^2.1.0",
     "@supabase/supabase-js": "^2.49.0",
     "@vercel/node": "^5.0.0",
     "x402": "^1.2.0"
