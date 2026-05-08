@@ -16,25 +16,26 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { runAgent } from "../src/agent";
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { verify, settle } = require("x402/verify") as {
-  verify: (p: any, r: any) => Promise<{ isValid: boolean; invalidReason?: string }>;
-  settle: (p: any, r: any) => Promise<{ success: boolean; errorReason?: string; transaction: string; network: string }>;
-};
+import { useFacilitator } from "x402/verify";
+import type { PaymentRequirements as X402PaymentRequirements } from "x402/types";
+import { createFacilitatorConfig } from "@coinbase/x402";
+import { runAgent } from "../src/agent.js";
+
+// ── Coinbase CDP facilitator for Base mainnet ──────────────────────────────────
+// .trim() is critical — Vercel env vars can have trailing newlines
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const facilitator = useFacilitator(
+  process.env.CDP_API_KEY_NAME && process.env.CDP_API_KEY_PRIVATE_KEY
+    ? createFacilitatorConfig(
+        process.env.CDP_API_KEY_NAME.trim(),
+        process.env.CDP_API_KEY_PRIVATE_KEY.trim()
+      ) as any
+    : undefined
+);
+
+const { verify, settle } = facilitator;
 type PaymentPayload = any;
-type PaymentRequirements = {
-  scheme: "exact";
-  network: string;
-  maxAmountRequired: string;
-  resource: string;
-  description: string;
-  mimeType: string;
-  payTo: string;
-  maxTimeoutSeconds: number;
-  asset: string;
-  extra?: Record<string, unknown>;
-};
+type PaymentRequirements = X402PaymentRequirements;
 
 const PRICE_PER_QUERY_USDC = 0.15;
 const FREE_TIER_QUERIES = 3;
@@ -108,13 +109,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return send402(res, paymentReqs, "invalid_payment");
     }
 
-    const verifyResult = await verify(paymentPayload, paymentReqs);
+    let verifyResult: { isValid: boolean; invalidReason?: string };
+    try {
+      verifyResult = await verify(paymentPayload, paymentReqs);
+    } catch (e: any) {
+      console.error("[aeonos] x402 verify error:", e.message);
+      return res.status(500).json({ error: "Payment verification failed", detail: e.message });
+    }
     if (!verifyResult.isValid) {
       return send402(res, paymentReqs, verifyResult.invalidReason);
     }
 
     // Settle — locks in the payment on-chain
-    const settleResult = await settle(paymentPayload, paymentReqs);
+    let settleResult: { success: boolean; errorReason?: string; transaction: string; network: string };
+    try {
+      settleResult = await settle(paymentPayload, paymentReqs);
+    } catch (e: any) {
+      console.error("[aeonos] x402 settle error:", e.message);
+      return res.status(500).json({ error: "Payment settlement failed", detail: e.message });
+    }
     if (!settleResult.success) {
       return send402(res, paymentReqs, settleResult.errorReason);
     }
@@ -362,7 +375,7 @@ function jsonRpcError(
 // ── x402 helpers ──────────────────────────────────────────────────────────────
 
 function buildPaymentRequirements(req: VercelRequest): PaymentRequirements {
-  const base = process.env.AGENT_BASE_URL || "https://aeonos-fawn.vercel.app";
+  const base = process.env.AGENT_BASE_URL || "https://aeonosai.vercel.app";
   return {
     scheme:             "exact",
     network:            "base",
@@ -373,6 +386,8 @@ function buildPaymentRequirements(req: VercelRequest): PaymentRequirements {
     payTo:              (process.env.PAYMENT_ADDRESS || "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc").trim(),
     maxTimeoutSeconds:  300,
     asset:              "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC on Base
+    // EIP-712 domain params for USDC on Base — required for correct signature
+    extra:              { name: "USD Coin", version: "2" },
   };
 }
 
@@ -396,7 +411,7 @@ function send402(
 // ── A2A Agent Card ─────────────────────────────────────────────────────────────
 
 function buildAgentCard() {
-  const base = process.env.AGENT_BASE_URL || "https://aeonos-fawn.vercel.app";
+  const base = process.env.AGENT_BASE_URL || "https://aeonosai.vercel.app";
   return {
     name: "AEONOS",
     description:
@@ -465,7 +480,8 @@ function buildAgentCard() {
     protocols: ["x402", "a2a"],
     network: "base",
     payment_address: process.env.PAYMENT_ADDRESS || "",
-    supportedTrust: ["self"],
-    agentURI: "ipfs://Qmc8dpobzt3N5uuiAgeNwc8RU7wXo1MdqTv5tFnE4VRbha",
+    supportedTrust: ["reputation", "crypto-economic"],
+    agentURI: "ipfs://bafkreiazp4wpkktnp63uesaxdzvjgim7yiawjyoywgl73mrdlfvne7xhzm",
+    agentId: 47096,
   };
 }

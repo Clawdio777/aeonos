@@ -45,6 +45,19 @@ const OFFERING_FEES = {
   aeonos_progress:  "0.75",
 };
 
+// Offering name → query wrapper (ensures correct output regardless of how buyer phrases their request)
+const OFFERING_PROMPTS = {
+  aeonos_aeo: (q) => q, // full strategy — pass through as-is
+  aeonos_test: (q) =>
+    `Quick AEO test — give me 3 immediate quick wins for: ${q}. Be brief and specific: just the top 3 actionable fixes, each with the exact change to make. No preamble.`,
+  aeonos_schema: (q) =>
+    `Generate complete, production-ready JSON-LD schema markup for: ${q}. Include all relevant schema types (Organization, LocalBusiness or Service, FAQPage with 5–7 Q&As, HowTo if applicable). Cross-reference with @id links. Mark all placeholder values clearly. Include a step-by-step implementation checklist.`,
+  aeonos_llms_txt: (q) =>
+    `Generate a complete llms.txt file for: ${q}. Use the full AEONOS llms.txt format with sections: brand summary, what we make/offer, key facts, target audience, differentiation, FAQs (8–10 Q&As in natural language), and brand voice. File should be under 2,000 words and deploy-ready.`,
+  aeonos_progress: (q) =>
+    `Generate a structured AEO progress report for: ${q}. Score each of the Four Layers (Technical/SXO, Content/AIO, Authority/GEO, Citation/AEO) from 0–100 with specific reasons. Identify the top 3 things working, the top 3 things broken, and give exactly 3 priority actions ranked by impact. Use the progress report format — not a strategy overview.`,
+};
+
 // Sweep: auto-transfer USDC earnings to personal Base wallet after each job
 const SWEEP_DEST      = "0x282d873b3737144b45c507320c12f22edfd51fe3";
 const SWEEP_THRESHOLD = 10.00; // USDC — only sweep if balance ≥ this
@@ -85,7 +98,7 @@ const jobs = new Map();
 
 function getJob(jobId, chainId) {
   if (!jobs.has(jobId)) {
-    jobs.set(jobId, { chainId: chainId ?? CHAIN_ID, requirement: null, budgetSet: false, submitted: false });
+    jobs.set(jobId, { chainId: chainId ?? CHAIN_ID, requirement: null, offeringName: null, budgetSet: false, submitted: false });
   }
   return jobs.get(jobId);
 }
@@ -148,10 +161,15 @@ async function handleEvent(raw) {
       job.requirement = await fetchRequirementFallback(jobId, job.chainId);
     }
 
-    const query     = job.requirement?.query     ?? "Provide an AEO/GEO strategy overview";
+    const rawQuery  = job.requirement?.query     ?? "Provide an AEO/GEO strategy overview";
     const caller_id = job.requirement?.caller_id ?? `acp_${jobId.slice(0, 16)}`;
 
-    jobLog(jobId, "Calling AEONOS API. Query:", query.slice(0, 80));
+    // Apply offering-specific prompt wrapper so the correct output type is always delivered
+    const offeringName = job.offeringName ?? "aeonos_aeo";
+    const promptFn = OFFERING_PROMPTS[offeringName] ?? OFFERING_PROMPTS.aeonos_aeo;
+    const query = promptFn(rawQuery);
+
+    jobLog(jobId, `Offering: ${offeringName} | Calling AEONOS API. Query:`, query.slice(0, 100));
     try {
       const res = await fetch(AEONOS_API, {
         method: "POST",
@@ -209,6 +227,9 @@ async function resolveOfferingFee(jobId, chainId) {
       const name = data.description ?? data.offeringName;
       if (name && OFFERING_FEES[name]) {
         log(`[Fee] ${jobId} → ${name} = ${OFFERING_FEES[name]} USDC`);
+        // Store offering name on the job for prompt injection at submit time
+        const job = jobs.get(jobId);
+        if (job) job.offeringName = name;
         return OFFERING_FEES[name];
       }
     }
