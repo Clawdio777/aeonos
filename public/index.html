@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AEONOS — The Operating System for AI Search Visibility</title>
+  <meta name="description" content="AEONOS is an AEO/GEO specialist agent. Get cited by ChatGPT, Perplexity, Claude, and Google AI Overviews. Schema markup, llms.txt, strategy — all via x402." />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue: #0052FF;
+      --blue-light: #4d8aff;
+      --blue-glow: rgba(0, 82, 255, 0.12);
+      --white: #ffffff;
+      --grey: #8a8a9a;
+      --card-bg: #0d0d0d;
+      --border: rgba(255,255,255,0.08);
+    }
+
+    body {
+      background: #000;
+      color: var(--white);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Nav ── */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 32px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-logo {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      text-decoration: none;
+      color: var(--white);
+    }
+
+    .nav-logo span {
+      background: linear-gradient(135deg, #0052FF, #4d8aff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .nav-home {
+      font-size: 0.85rem;
+      color: var(--grey);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .nav-home:hover { color: var(--white); }
+
+    /* ── Hero ── */
+    .hero {
+      text-align: center;
+      padding: 80px 24px 60px;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    .hero-tag {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 5px 14px;
+      border-radius: 20px;
+      background: rgba(0, 82, 255, 0.12);
+      color: var(--blue-light);
+      border: 1px solid rgba(0, 82, 255, 0.25);
+      margin-bottom: 24px;
+    }
+
+    .hero h1 {
+      font-size: clamp(2.4rem, 6vw, 3.6rem);
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1.08;
+      margin-bottom: 20px;
+    }
+
+    .hero h1 span {
+      background: linear-gradient(135deg, #0052FF, #4d8aff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero p {
+      color: #999;
+      font-size: 1.1rem;
+      line-height: 1.7;
+      margin-bottom: 36px;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 12px 24px;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: opacity 0.2s, transform 0.15s;
+      cursor: pointer;
+    }
+
+    .btn:hover { opacity: 0.85; transform: translateY(-1px); }
+
+    .btn-primary {
+      background: var(--blue);
+      color: #fff;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--white);
+      border: 1px solid var(--border);
+    }
+
+    /* ── Divider ── */
+    .divider {
+      max-width: 900px;
+      margin: 0 auto;
+      border: none;
+      border-top: 1px solid var(--border);
+    }
+
+    /* ── Services ── */
+    .section {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 60px 24px;
+    }
+
+    .section-label {
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      font-size: 0.72rem;
+      color: var(--blue-light);
+      font-weight: 600;
+      margin-bottom: 28px;
+    }
+
+    .services {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 14px;
+    }
+
+    .service-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .service-name {
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    .service-desc {
+      font-size: 0.85rem;
+      color: var(--grey);
+      line-height: 1.5;
+    }
+
+    .service-price {
+      font-size: 0.8rem;
+      color: var(--blue-light);
+      margin-top: 4px;
+      font-weight: 500;
+    }
+
+    /* ── API block ── */
+    .api-block {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 28px 32px;
+    }
+
+    .api-block h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    pre {
+      background: #111;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+      overflow-x: auto;
+      font-size: 0.82rem;
+      line-height: 1.6;
+      color: #ccc;
+    }
+
+    code .key   { color: #4d8aff; }
+    code .str   { color: #4ade80; }
+    code .punct { color: #666; }
+
+    .copy-hint {
+      font-size: 0.75rem;
+      color: var(--grey);
+      margin-top: 10px;
+    }
+
+    .copy-hint a {
+      color: var(--blue-light);
+      text-decoration: none;
+    }
+
+    /* ── Protocols ── */
+    .protocols-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .proto-pill {
+      padding: 8px 16px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 30px;
+      font-size: 0.82rem;
+      color: #aaa;
+    }
+
+    .proto-pill strong { color: var(--white); }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 28px 24px;
+      text-align: center;
+      color: var(--grey);
+      font-size: 0.82rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    footer a { color: var(--blue-light); text-decoration: none; }
+    footer span { color: var(--border); }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <a href="/" class="nav-logo">AEO<span>NOS</span></a>
+    <a href="https://basechainlabs.com" class="nav-home">← BaseChain Labs</a>
+  </nav>
+
+  <div class="hero">
+    <div class="hero-tag">AEO / GEO Agent · x402 · Built on Base</div>
+    <h1>The OS for <span>AI Search</span> Visibility</h1>
+    <p>
+      AEONOS helps any business or agent get cited by ChatGPT, Perplexity, Claude,
+      and Google AI Overviews — with schema markup, llms.txt, strategy audits,
+      and persistent memory across every session.
+    </p>
+    <div class="hero-actions">
+      <a href="https://aeonos.basechainlabs.com/api/agent" class="btn btn-primary">Try the API</a>
+      <a href="/SKILL.md" class="btn btn-secondary">Download SKILL.md</a>
+      <a href="https://app.virtuals.io/acp/agent/019dfbe3-94e6-73f8-9acb-641c5c8d8d9c" target="_blank" class="btn btn-secondary">ACP Marketplace</a>
+    </div>
+  </div>
+
+  <hr class="divider" />
+
+  <!-- Services -->
+  <div class="section">
+    <p class="section-label">What AEONOS Does</p>
+    <div class="services">
+      <div class="service-card">
+        <div class="service-name">AEO Strategy Audit</div>
+        <div class="service-desc">Full audit + P1/P2/P3 roadmap. On-page, schema, E-E-A-T, 5-pillar AI inclusion check.</div>
+        <div class="service-price">1.00 USDC via ACP · 0.15 USDC via x402</div>
+      </div>
+      <div class="service-card">
+        <div class="service-name">JSON-LD Schema Markup</div>
+        <div class="service-desc">Production-ready schema: Organization, FAQPage, HowTo, LocalBusiness. Deploy-ready with implementation checklist.</div>
+        <div class="service-price">0.50 USDC via ACP</div>
+      </div>
+      <div class="service-card">
+        <div class="service-name">llms.txt Generator</div>
+        <div class="service-desc">Complete llms.txt file: brand summary, FAQs, voice, differentiators. Under 2,000 words, deploy-ready.</div>
+        <div class="service-price">0.50 USDC via ACP</div>
+      </div>
+      <div class="service-card">
+        <div class="service-name">AEO Progress Report</div>
+        <div class="service-desc">Four Layers scorecard (0–100): Technical, Content, Authority, Citation. Top 3 wins, top 3 gaps, 3 actions.</div>
+        <div class="service-price">0.75 USDC via ACP</div>
+      </div>
+      <div class="service-card">
+        <div class="service-name">Quick Wins</div>
+        <div class="service-desc">3 immediate, specific AEO fixes with exact changes. Fast and actionable.</div>
+        <div class="service-price">0.01 USDC via ACP</div>
+      </div>
+      <div class="service-card">
+        <div class="service-name">Persistent Memory</div>
+        <div class="service-desc">AEONOS remembers your site, keywords, and audit history across every session. No re-explaining.</div>
+        <div class="service-price">Included with every query</div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider" />
+
+  <!-- API -->
+  <div class="section">
+    <p class="section-label">Integration</p>
+    <div class="api-block">
+      <h3>Call AEONOS from any agent</h3>
+      <pre><code><span class="key">POST</span> https://aeonos.basechainlabs.com/api/agent
+<span class="key">Content-Type:</span> <span class="str">application/json</span>
+
+<span class="punct">{</span>
+  <span class="key">"query"</span><span class="punct">:</span> <span class="str">"Audit mysite.com for AI search visibility"</span><span class="punct">,</span>
+  <span class="key">"caller_id"</span><span class="punct">:</span> <span class="str">"your-agent-id"</span>
+<span class="punct">}</span></code></pre>
+      <p class="copy-hint">
+        3 free queries per caller · 0.15 USDC/query via x402 after that ·
+        <a href="/SKILL.md">Download SKILL.md</a> for one-paste agent integration
+      </p>
+    </div>
+  </div>
+
+  <hr class="divider" />
+
+  <!-- Protocols -->
+  <div class="section">
+    <p class="section-label">Protocols & Standards</p>
+    <div class="protocols-row">
+      <div class="proto-pill"><strong>x402</strong> · HTTP payments</div>
+      <div class="proto-pill"><strong>A2A</strong> · v0.2.1 agent protocol</div>
+      <div class="proto-pill"><strong>ACP v2</strong> · Virtuals Protocol</div>
+      <div class="proto-pill"><strong>Base</strong> · USDC settlement</div>
+      <div class="proto-pill"><strong>ERC-8004</strong> · Agent ID 47096</div>
+    </div>
+  </div>
+
+  <footer>
+    <a href="https://basechainlabs.com">BaseChain Labs</a>
+    <span>·</span>
+    <a href="/SKILL.md">SKILL.md</a>
+    <span>·</span>
+    <a href="/.well-known/agent.json">Agent Card</a>
+    <span>·</span>
+    <a href="https://app.virtuals.io/acp/agent/019dfbe3-94e6-73f8-9acb-641c5c8d8d9c" target="_blank">ACP Marketplace</a>
+  </footer>
+
+</body>
+</html>
