@@ -4,372 +4,428 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AEONOS — The Operating System for AI Search Visibility</title>
-  <meta name="description" content="AEONOS is an AEO/GEO specialist agent. Get cited by ChatGPT, Perplexity, Claude, and Google AI Overviews. Schema markup, llms.txt, strategy — all via x402." />
+  <meta name="description" content="AEONOS is an AEO/GEO specialist agent. Get cited by ChatGPT, Perplexity, Claude, and Google AI Overviews. Schema markup, llms.txt, strategy — via x402." />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --blue: #0052FF;
-      --blue-light: #4d8aff;
-      --blue-glow: rgba(0, 82, 255, 0.12);
+      --blue: #0071e3;
       --white: #ffffff;
-      --grey: #8a8a9a;
-      --card-bg: #0d0d0d;
-      --border: rgba(255,255,255,0.08);
+      --off-white: #f5f5f7;
+      --text: #1d1d1f;
+      --text-secondary: #6e6e73;
+      --text-tertiary: #aeaeb2;
+      --border: rgba(0,0,0,0.08);
+      --card-shadow: 0 2px 20px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04);
     }
 
+    html { scroll-behavior: smooth; }
+
     body {
-      background: #000;
-      color: var(--white);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      min-height: 100vh;
+      background: #fff;
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
       -webkit-font-smoothing: antialiased;
     }
 
     /* ── Nav ── */
     nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(255,255,255,0.82);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      height: 52px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 20px 32px;
-      border-bottom: 1px solid var(--border);
     }
 
     .nav-logo {
-      font-size: 1.1rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
+      font-size: 1.05rem;
+      font-weight: 600;
       text-decoration: none;
-      color: var(--white);
+      color: var(--text);
+      letter-spacing: -0.01em;
     }
 
-    .nav-logo span {
-      background: linear-gradient(135deg, #0052FF, #4d8aff);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
+    .nav-logo span { color: var(--blue); }
 
     .nav-home {
       font-size: 0.85rem;
-      color: var(--grey);
+      color: var(--blue);
       text-decoration: none;
-      transition: color 0.2s;
     }
 
-    .nav-home:hover { color: var(--white); }
+    .nav-home:hover { text-decoration: underline; }
 
     /* ── Hero ── */
     .hero {
+      background: #000;
       text-align: center;
-      padding: 80px 24px 60px;
-      max-width: 700px;
-      margin: 0 auto;
+      padding: 100px 24px 90px;
     }
 
-    .hero-tag {
-      display: inline-block;
-      font-size: 0.72rem;
+    .hero-eyebrow {
+      font-size: 0.8rem;
       font-weight: 600;
-      letter-spacing: 0.12em;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
-      padding: 5px 14px;
-      border-radius: 20px;
-      background: rgba(0, 82, 255, 0.12);
-      color: var(--blue-light);
-      border: 1px solid rgba(0, 82, 255, 0.25);
-      margin-bottom: 24px;
-    }
-
-    .hero h1 {
-      font-size: clamp(2.4rem, 6vw, 3.6rem);
-      font-weight: 700;
-      letter-spacing: -0.04em;
-      line-height: 1.08;
+      color: #0071e3;
       margin-bottom: 20px;
     }
 
-    .hero h1 span {
-      background: linear-gradient(135deg, #0052FF, #4d8aff);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+    .hero h1 {
+      font-size: clamp(2.8rem, 7vw, 5rem);
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1.04;
+      color: #f5f5f7;
+      margin-bottom: 20px;
+    }
+
+    .hero h1 em {
+      font-style: normal;
+      color: #0071e3;
     }
 
     .hero p {
-      color: #999;
-      font-size: 1.1rem;
-      line-height: 1.7;
-      margin-bottom: 36px;
+      color: #86868b;
+      font-size: clamp(1rem, 2vw, 1.2rem);
+      max-width: 560px;
+      margin: 0 auto 40px;
+      line-height: 1.6;
     }
 
     .hero-actions {
       display: flex;
-      gap: 12px;
+      gap: 14px;
       justify-content: center;
       flex-wrap: wrap;
     }
 
     .btn {
-      padding: 12px 24px;
-      border-radius: 10px;
+      display: inline-block;
+      padding: 12px 22px;
+      border-radius: 980px;
       font-size: 0.9rem;
-      font-weight: 600;
+      font-weight: 500;
       text-decoration: none;
-      transition: opacity 0.2s, transform 0.15s;
-      cursor: pointer;
+      transition: opacity 0.2s;
+      letter-spacing: -0.01em;
     }
 
-    .btn:hover { opacity: 0.85; transform: translateY(-1px); }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: #0071e3; color: #fff; }
+    .btn-ghost { background: rgba(255,255,255,0.1); color: #f5f5f7; }
 
-    .btn-primary {
-      background: var(--blue);
-      color: #fff;
-    }
-
-    .btn-secondary {
-      background: transparent;
-      color: var(--white);
-      border: 1px solid var(--border);
-    }
-
-    /* ── Divider ── */
-    .divider {
-      max-width: 900px;
-      margin: 0 auto;
-      border: none;
-      border-top: 1px solid var(--border);
-    }
-
-    /* ── Services ── */
+    /* ── Section base ── */
     .section {
-      max-width: 900px;
+      max-width: 980px;
       margin: 0 auto;
-      padding: 60px 24px;
+      padding: 80px 24px;
     }
 
-    .section-label {
-      text-transform: uppercase;
-      letter-spacing: 0.15em;
-      font-size: 0.72rem;
-      color: var(--blue-light);
+    .section-eyebrow {
+      font-size: 0.75rem;
       font-weight: 600;
-      margin-bottom: 28px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--blue);
+      margin-bottom: 12px;
     }
 
+    .section-title {
+      font-size: clamp(1.8rem, 4vw, 2.6rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin-bottom: 12px;
+    }
+
+    .section-sub {
+      color: var(--text-secondary);
+      font-size: 1rem;
+      line-height: 1.6;
+      max-width: 520px;
+      margin-bottom: 48px;
+    }
+
+    /* ── Services grid ── */
     .services {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 14px;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 2px;
+      background: var(--border);
+      border-radius: 20px;
+      overflow: hidden;
     }
 
     .service-card {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 22px;
+      background: #fff;
+      padding: 28px 26px;
       display: flex;
       flex-direction: column;
       gap: 8px;
     }
 
+    .service-card:first-child { border-radius: 20px 0 0 0; }
+
+    .service-icon {
+      font-size: 1.4rem;
+      margin-bottom: 4px;
+    }
+
     .service-name {
-      font-size: 0.95rem;
+      font-size: 1rem;
       font-weight: 600;
+      letter-spacing: -0.01em;
     }
 
     .service-desc {
-      font-size: 0.85rem;
-      color: var(--grey);
-      line-height: 1.5;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      line-height: 1.55;
     }
 
     .service-price {
       font-size: 0.8rem;
-      color: var(--blue-light);
-      margin-top: 4px;
+      color: var(--blue);
       font-weight: 500;
+      margin-top: 6px;
     }
 
-    /* ── API block ── */
-    .api-block {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 28px 32px;
+    /* ── Integration ── */
+    .bg-off {
+      background: var(--off-white);
     }
 
-    .api-block h3 {
-      font-size: 1rem;
-      font-weight: 600;
-      margin-bottom: 16px;
+    .integration-wrap {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      align-items: start;
+    }
+
+    @media (max-width: 700px) {
+      .integration-wrap { grid-template-columns: 1fr; }
+    }
+
+    .integration-text h2 {
+      font-size: 1.9rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin-bottom: 14px;
+    }
+
+    .integration-text p {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      line-height: 1.65;
+      margin-bottom: 24px;
     }
 
     pre {
-      background: #111;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 18px 20px;
+      background: #1d1d1f;
+      border-radius: 14px;
+      padding: 22px 24px;
       overflow-x: auto;
-      font-size: 0.82rem;
-      line-height: 1.6;
-      color: #ccc;
+      font-size: 0.8rem;
+      line-height: 1.7;
+      color: #f5f5f7;
+      font-family: "SF Mono", "Fira Code", monospace;
     }
 
-    code .key   { color: #4d8aff; }
-    code .str   { color: #4ade80; }
-    code .punct { color: #666; }
-
-    .copy-hint {
-      font-size: 0.75rem;
-      color: var(--grey);
-      margin-top: 10px;
-    }
-
-    .copy-hint a {
-      color: var(--blue-light);
-      text-decoration: none;
-    }
+    .c-method { color: #0071e3; }
+    .c-url    { color: #30d158; }
+    .c-key    { color: #bf5af2; }
+    .c-val    { color: #ff9f0a; }
 
     /* ── Protocols ── */
-    .protocols-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
+    .proto-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 14px;
     }
 
-    .proto-pill {
-      padding: 8px 16px;
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 30px;
-      font-size: 0.82rem;
-      color: #aaa;
+    .proto-card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: var(--card-shadow);
     }
 
-    .proto-pill strong { color: var(--white); }
+    .proto-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-tertiary);
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+
+    .proto-value {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text);
+    }
 
     /* ── Footer ── */
     footer {
+      background: var(--off-white);
       border-top: 1px solid var(--border);
-      padding: 28px 24px;
+      padding: 32px 24px;
       text-align: center;
-      color: var(--grey);
       font-size: 0.82rem;
+      color: var(--text-secondary);
       display: flex;
       flex-wrap: wrap;
-      gap: 12px;
-      align-items: center;
+      gap: 10px;
       justify-content: center;
+      align-items: center;
     }
 
-    footer a { color: var(--blue-light); text-decoration: none; }
-    footer span { color: var(--border); }
+    footer a { color: var(--blue); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+    footer .dot { color: var(--text-tertiary); }
   </style>
 </head>
 <body>
 
   <nav>
     <a href="/" class="nav-logo">AEO<span>NOS</span></a>
-    <a href="https://basechainlabs.com" class="nav-home">← BaseChain Labs</a>
+    <a href="https://basechainlabs.com" class="nav-home">BaseChain Labs ↗</a>
   </nav>
 
-  <div class="hero">
-    <div class="hero-tag">AEO / GEO Agent · x402 · Built on Base</div>
-    <h1>The OS for <span>AI Search</span> Visibility</h1>
-    <p>
-      AEONOS helps any business or agent get cited by ChatGPT, Perplexity, Claude,
-      and Google AI Overviews — with schema markup, llms.txt, strategy audits,
-      and persistent memory across every session.
-    </p>
+  <!-- Hero -->
+  <section class="hero">
+    <p class="hero-eyebrow">AEO · GEO · AI Search Visibility</p>
+    <h1>The OS for<br><em>AI Search.</em></h1>
+    <p>Help any business get cited by ChatGPT, Perplexity, Claude, and Google AI Overviews. Schema, llms.txt, strategy — all via x402.</p>
     <div class="hero-actions">
-      <a href="https://aeonos.basechainlabs.com/api/agent" class="btn btn-primary">Try the API</a>
-      <a href="/SKILL.md" class="btn btn-secondary">Download SKILL.md</a>
-      <a href="https://app.virtuals.io/acp/agent/019dfbe3-94e6-73f8-9acb-641c5c8d8d9c" target="_blank" class="btn btn-secondary">ACP Marketplace</a>
+      <a href="/api/agent" class="btn btn-primary">Try the API</a>
+      <a href="/SKILL.md" class="btn btn-ghost">Download SKILL.md</a>
     </div>
-  </div>
-
-  <hr class="divider" />
+  </section>
 
   <!-- Services -->
   <div class="section">
-    <p class="section-label">What AEONOS Does</p>
+    <p class="section-eyebrow">Capabilities</p>
+    <h2 class="section-title">Everything an agent needs<br>to win AI search.</h2>
+    <p class="section-sub">Six specialist capabilities, each delivered as a structured, actionable output — no filler, no theory.</p>
     <div class="services">
       <div class="service-card">
+        <div class="service-icon">🔍</div>
         <div class="service-name">AEO Strategy Audit</div>
-        <div class="service-desc">Full audit + P1/P2/P3 roadmap. On-page, schema, E-E-A-T, 5-pillar AI inclusion check.</div>
-        <div class="service-price">1.00 USDC via ACP · 0.15 USDC via x402</div>
+        <div class="service-desc">Full audit with P1/P2/P3 roadmap. On-page, schema, E-E-A-T, and the 5-pillar AI inclusion check.</div>
+        <div class="service-price">0.15 USDC · x402</div>
       </div>
       <div class="service-card">
-        <div class="service-name">JSON-LD Schema Markup</div>
-        <div class="service-desc">Production-ready schema: Organization, FAQPage, HowTo, LocalBusiness. Deploy-ready with implementation checklist.</div>
-        <div class="service-price">0.50 USDC via ACP</div>
+        <div class="service-icon">🏗️</div>
+        <div class="service-name">JSON-LD Schema</div>
+        <div class="service-desc">Production-ready schema markup — Organization, FAQPage, HowTo, LocalBusiness. Deploy-ready with checklist.</div>
+        <div class="service-price">0.50 USDC · ACP</div>
       </div>
       <div class="service-card">
+        <div class="service-icon">📄</div>
         <div class="service-name">llms.txt Generator</div>
-        <div class="service-desc">Complete llms.txt file: brand summary, FAQs, voice, differentiators. Under 2,000 words, deploy-ready.</div>
-        <div class="service-price">0.50 USDC via ACP</div>
+        <div class="service-desc">Complete llms.txt: brand summary, FAQs, voice, differentiators. Under 2,000 words and deploy-ready.</div>
+        <div class="service-price">0.50 USDC · ACP</div>
       </div>
       <div class="service-card">
-        <div class="service-name">AEO Progress Report</div>
-        <div class="service-desc">Four Layers scorecard (0–100): Technical, Content, Authority, Citation. Top 3 wins, top 3 gaps, 3 actions.</div>
-        <div class="service-price">0.75 USDC via ACP</div>
+        <div class="service-icon">📊</div>
+        <div class="service-name">Progress Report</div>
+        <div class="service-desc">Four Layers scorecard 0–100: Technical, Content, Authority, Citation. Top wins, gaps, and 3 priority actions.</div>
+        <div class="service-price">0.75 USDC · ACP</div>
       </div>
       <div class="service-card">
+        <div class="service-icon">⚡</div>
         <div class="service-name">Quick Wins</div>
-        <div class="service-desc">3 immediate, specific AEO fixes with exact changes. Fast and actionable.</div>
-        <div class="service-price">0.01 USDC via ACP</div>
+        <div class="service-desc">3 immediate, specific AEO fixes with exact changes to make. Fast and actionable.</div>
+        <div class="service-price">0.01 USDC · ACP</div>
       </div>
       <div class="service-card">
+        <div class="service-icon">🧠</div>
         <div class="service-name">Persistent Memory</div>
-        <div class="service-desc">AEONOS remembers your site, keywords, and audit history across every session. No re-explaining.</div>
+        <div class="service-desc">AEONOS remembers your site, keywords, and audit history. No re-explaining across sessions.</div>
         <div class="service-price">Included with every query</div>
       </div>
     </div>
   </div>
 
-  <hr class="divider" />
+  <!-- Integration -->
+  <div class="bg-off">
+    <div class="section">
+      <div class="integration-wrap">
+        <div class="integration-text">
+          <p class="section-eyebrow">Integration</p>
+          <h2>One call.<br>Any agent.</h2>
+          <p>AEONOS works with any A2A or x402-compatible agent. First 3 queries free, then 0.15 USDC per query on Base.</p>
+          <a href="/SKILL.md" class="btn btn-primary" style="display:inline-block; margin-top:4px;">Download SKILL.md</a>
+        </div>
+        <pre><code><span class="c-method">POST</span> <span class="c-url">https://aeonos.basechainlabs.com/api/agent</span>
 
-  <!-- API -->
-  <div class="section">
-    <p class="section-label">Integration</p>
-    <div class="api-block">
-      <h3>Call AEONOS from any agent</h3>
-      <pre><code><span class="key">POST</span> https://aeonos.basechainlabs.com/api/agent
-<span class="key">Content-Type:</span> <span class="str">application/json</span>
+{
+  <span class="c-key">"query"</span>: <span class="c-val">"Audit mysite.com for AI visibility"</span>,
+  <span class="c-key">"caller_id"</span>: <span class="c-val">"your-agent-id"</span>
+}
 
-<span class="punct">{</span>
-  <span class="key">"query"</span><span class="punct">:</span> <span class="str">"Audit mysite.com for AI search visibility"</span><span class="punct">,</span>
-  <span class="key">"caller_id"</span><span class="punct">:</span> <span class="str">"your-agent-id"</span>
-<span class="punct">}</span></code></pre>
-      <p class="copy-hint">
-        3 free queries per caller · 0.15 USDC/query via x402 after that ·
-        <a href="/SKILL.md">Download SKILL.md</a> for one-paste agent integration
-      </p>
+<span style="color:#6e6e73">// Response</span>
+{
+  <span class="c-key">"status"</span>: <span class="c-val">"completed"</span>,
+  <span class="c-key">"artifact"</span>: {
+    <span class="c-key">"parts"</span>: [{ <span class="c-key">"type"</span>: <span class="c-val">"text"</span>, <span class="c-key">"text"</span>: <span class="c-val">"..."</span> }]
+  }
+}</code></pre>
+      </div>
     </div>
   </div>
 
-  <hr class="divider" />
-
   <!-- Protocols -->
   <div class="section">
-    <p class="section-label">Protocols & Standards</p>
-    <div class="protocols-row">
-      <div class="proto-pill"><strong>x402</strong> · HTTP payments</div>
-      <div class="proto-pill"><strong>A2A</strong> · v0.2.1 agent protocol</div>
-      <div class="proto-pill"><strong>ACP v2</strong> · Virtuals Protocol</div>
-      <div class="proto-pill"><strong>Base</strong> · USDC settlement</div>
-      <div class="proto-pill"><strong>ERC-8004</strong> · Agent ID 47096</div>
+    <p class="section-eyebrow">Standards</p>
+    <h2 class="section-title">Built on open protocols.</h2>
+    <p class="section-sub" style="margin-bottom:36px;">AEONOS runs on the same infrastructure as AWS AgentCore, Coinbase, and the Linux Foundation x402 standard.</p>
+    <div class="proto-grid">
+      <div class="proto-card">
+        <div class="proto-label">Payment</div>
+        <div class="proto-value">x402</div>
+      </div>
+      <div class="proto-card">
+        <div class="proto-label">Network</div>
+        <div class="proto-value">Base · USDC</div>
+      </div>
+      <div class="proto-card">
+        <div class="proto-label">Agent Protocol</div>
+        <div class="proto-value">A2A v0.2.1</div>
+      </div>
+      <div class="proto-card">
+        <div class="proto-label">Marketplace</div>
+        <div class="proto-value">ACP v2</div>
+      </div>
+      <div class="proto-card">
+        <div class="proto-label">Discovery</div>
+        <div class="proto-value">Agentic.market</div>
+      </div>
+      <div class="proto-card">
+        <div class="proto-label">Agent ID</div>
+        <div class="proto-value">ERC-8004 #47096</div>
+      </div>
     </div>
   </div>
 
   <footer>
-    <a href="https://basechainlabs.com">BaseChain Labs</a>
-    <span>·</span>
+    <span>© 2026 BaseChain Labs</span>
+    <span class="dot">·</span>
+    <a href="https://basechainlabs.com">basechainlabs.com</a>
+    <span class="dot">·</span>
     <a href="/SKILL.md">SKILL.md</a>
-    <span>·</span>
+    <span class="dot">·</span>
     <a href="/.well-known/agent.json">Agent Card</a>
-    <span>·</span>
+    <span class="dot">·</span>
     <a href="https://app.virtuals.io/acp/agent/019dfbe3-94e6-73f8-9acb-641c5c8d8d9c" target="_blank">ACP Marketplace</a>
   </footer>
 
