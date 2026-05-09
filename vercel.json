@@ -4,6 +4,7 @@
     { "source": "/.well-known/agent-card.json", "destination": "/api/agent" },
     { "source": "/api/agent-card", "destination": "/api/agent?agent-card=true" },
     { "source": "/SKILL.md", "destination": "/public/SKILL.md" },
+    { "source": "/favicon.svg", "destination": "/public/favicon.svg" },
     { "source": "/", "destination": "/public/index.html" }
   ],
   "headers": [
