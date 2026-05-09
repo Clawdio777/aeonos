@@ -5,6 +5,7 @@
     { "source": "/api/agent-card", "destination": "/api/agent?agent-card=true" },
     { "source": "/SKILL.md", "destination": "/public/SKILL.md" },
     { "source": "/favicon.svg", "destination": "/public/favicon.svg" },
+    { "source": "/aeonos-logo.jpg", "destination": "/public/aeonos-logo.jpg" },
     { "source": "/", "destination": "/public/index.html" }
   ],
   "headers": [
