@@ -30,5 +30,11 @@
     "api/agent.ts": {
       "maxDuration": 300
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/daily-summary",
+      "schedule": "0 23 * * *"
+    }
+  ]
 }
