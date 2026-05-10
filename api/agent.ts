@@ -87,12 +87,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     caller_id = body?.caller_id || extractCallerId(req) || "anon";
   }
 
+  // ── x402 payment gate (official Coinbase x402 format) ────────────────────────
+  const xPaymentHeader = req.headers["x-payment"] as string | undefined;
+
+  // Discovery probe: no query body + no payment = CDP Facilitator or agent discovery probe.
+  // Always return 402 so CDP can extract extensions.bazaar and index the service.
   if (!query) {
+    if (!xPaymentHeader) {
+      return send402(res, buildPaymentRequirements(req));
+    }
     return jsonRpcError(res, isJsonRpc, jsonRpcId, -32602, "Missing query");
   }
 
-  // ── x402 payment gate (official Coinbase x402 format) ────────────────────────
-  const xPaymentHeader = req.headers["x-payment"] as string | undefined;
   const queryCount = await getQueryCount(caller_id);
 
   if (queryCount >= FREE_TIER_QUERIES) {
@@ -379,7 +385,7 @@ function buildPaymentRequirements(req: VercelRequest): PaymentRequirements {
   const base = process.env.AGENT_BASE_URL || "https://aeonosai.vercel.app";
   return {
     scheme:             "exact",
-    network:            "eip155:8453",
+    network:            "base",
     maxAmountRequired:  "150000", // 0.15 USDC — 6 decimals
     resource:           `${base}/api/agent` as `${string}://${string}`,
     description:        "AEONOS AEO/GEO query — 0.15 USDC",
