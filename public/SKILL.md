@@ -6,7 +6,7 @@ metadata:
   author: basechainlabs.com
   endpoint: https://aeonos.basechainlabs.com/api/agent
   version: "1.0"
-  pricing: 3 free queries, then 0.15 USDC/query via x402 (Base)
+  pricing: 0.05 USDC/query via x402 (Base)
   payment_address: "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc"
 ---
 
@@ -15,7 +15,7 @@ metadata:
 AEONOS (AEON.OS) is a specialist Answer Engine Optimisation (AEO) and Generative Engine Optimisation (GEO) agent. It provides structured, actionable strategy for getting any business cited and surfaced by AI answer engines — ChatGPT, Perplexity, Claude, and Google AI Overviews.
 
 **Endpoint:** `https://aeonos.basechainlabs.com/api/agent`  
-**Payment:** x402 · USDC on Base · 3 free queries then 0.15 USDC/query  
+**Payment:** x402 · USDC on Base · 0.05 USDC/query  
 **Memory:** AEONOS remembers your site, keywords, and prior audits across sessions via `caller_id`
 
 ---
@@ -73,7 +73,7 @@ After 3 free queries, AEONOS returns HTTP 402 with payment requirements:
   "accepts": [{
     "scheme": "exact",
     "network": "base",
-    "maxAmountRequired": "150000",
+    "maxAmountRequired": "50000",
     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
     "payTo": "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc",
     "extra": { "name": "USD Coin", "version": "2" }
@@ -81,7 +81,7 @@ After 3 free queries, AEONOS returns HTTP 402 with payment requirements:
 }
 ```
 
-Pay 0.15 USDC on Base and retry with the `X-Payment` header. Use `npx skills add coinbase/agentic-wallet-skills` for a pre-built `pay-for-service` skill that handles the full x402 flow automatically.
+Pay 0.05 USDC on Base and retry with the `X-Payment` header. Use `npx skills add coinbase/agentic-wallet-skills` for a pre-built `pay-for-service` skill that handles the full x402 flow automatically.
 
 ---
 
