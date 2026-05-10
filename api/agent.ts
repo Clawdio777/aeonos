@@ -19,6 +19,7 @@ import { createClient } from "@supabase/supabase-js";
 import { useFacilitator } from "x402/verify";
 import type { PaymentRequirements as X402PaymentRequirements } from "x402/types";
 import { createFacilitatorConfig } from "@coinbase/x402";
+import { declareDiscoveryExtension } from "@x402/extensions";
 import { runAgent } from "../src/agent.js";
 
 // ── Coinbase CDP facilitator for Base mainnet ──────────────────────────────────
@@ -391,35 +392,63 @@ function buildPaymentRequirements(req: VercelRequest): PaymentRequirements {
   };
 }
 
-// Bazaar discovery extension — auto-indexes AEONOS on agentic.market via CDP facilitator
-const BAZAAR_EXTENSION = {
-  bazaar: {
-    info: {
-      input: {
-        body: {
-          query: "<your AEO/GEO question — e.g. 'Audit mysite.com for AI search visibility'>",
-          caller_id: "<optional: your agent ID for persistent memory across sessions>",
-        },
-        bodyType: "json",
-        method: "POST",
-        type: "http",
+// Bazaar discovery extension — proper declareDiscoveryExtension() format for agentic.market indexing
+const BAZAAR_EXTENSION = declareDiscoveryExtension({
+  bodyType: "json",
+  input: {
+    query: "Audit mysite.com for AI search visibility and get a P1/P2/P3 action plan",
+    caller_id: "my-agent-id",
+  },
+  inputSchema: {
+    properties: {
+      query: {
+        type: "string",
+        description:
+          "AEO/GEO question or URL to audit. Examples: 'Audit mysite.com for AI visibility', " +
+          "'Write an llms.txt for my SaaS', 'Generate JSON-LD schema for my pricing page', " +
+          "'Score my site on the AEONOS 5-pillar AI inclusion check'",
       },
-      output: {
-        type: "json",
-        example: {
-          status: "completed",
-          artifact: {
-            parts: [{ type: "text", text: "# AEO Strategy for mysite.com\n\n**P1 (This Week)**..." }],
-            index: 0,
-          },
-          tool_calls: ["queryLiveResearch", "retrieveSharedAEO"],
-          tokens: 4200,
-          free_queries_remaining: 0,
+      caller_id: {
+        type: "string",
+        description:
+          "Optional agent or user ID. AEONOS stores persistent memory per caller — " +
+          "site URL, keywords, and audit history are remembered across sessions.",
+      },
+    },
+    required: ["query"],
+  },
+  output: {
+    example: {
+      status: "completed",
+      artifact: {
+        parts: [{
+          type: "text",
+          text: "# AEO Audit: mysite.com\n\n**Overall Score: 62/100**\n\n## P1 — Do This Week\n1. Add FAQPage JSON-LD schema...",
+        }],
+        index: 0,
+      },
+      tool_calls: ["queryLiveResearch", "retrieveSharedAEO", "storeCallerMemory"],
+      tokens: 4800,
+      free_queries_remaining: 0,
+    },
+    schema: {
+      properties: {
+        status: { type: "string", description: "completed | failed" },
+        artifact: {
+          type: "object",
+          description: "A2A-format artifact containing the AEO/GEO strategy report as markdown text",
         },
+        tool_calls: {
+          type: "array",
+          items: { type: "string" },
+          description: "Tools used: queryLiveResearch, retrieveSharedAEO, retrieveCallerMemory, storeCallerMemory",
+        },
+        tokens: { type: "number" },
+        free_queries_remaining: { type: "number" },
       },
     },
   },
-};
+});
 
 function send402(
   res: VercelResponse,
