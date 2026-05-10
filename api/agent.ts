@@ -379,7 +379,7 @@ function buildPaymentRequirements(req: VercelRequest): PaymentRequirements {
   const base = process.env.AGENT_BASE_URL || "https://aeonosai.vercel.app";
   return {
     scheme:             "exact",
-    network:            "base",
+    network:            "eip155:8453",
     maxAmountRequired:  "150000", // 0.15 USDC — 6 decimals
     resource:           `${base}/api/agent` as `${string}://${string}`,
     description:        "AEONOS AEO/GEO query — 0.15 USDC",
