@@ -17,6 +17,7 @@
     "@coinbase/x402": "^2.1.0",
     "@supabase/supabase-js": "^2.49.0",
     "@vercel/node": "^5.0.0",
+    "@x402/extensions": "^2.11.0",
     "x402": "^1.2.0"
   },
   "devDependencies": {
