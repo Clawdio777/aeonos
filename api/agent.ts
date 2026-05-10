@@ -460,6 +460,14 @@ const _bazaarBase = declareDiscoveryExtension({
 const BAZAAR_EXTENSION = {
   bazaar: {
     ..._bazaarBase.bazaar,
+    // method is omitted from declareDiscoveryExtension intentionally — set manually here
+    info: {
+      ..._bazaarBase.bazaar.info,
+      input: {
+        ..._bazaarBase.bazaar.info.input,
+        method: "POST",
+      },
+    },
     serviceName: "AEONOS",
     tags: ["aeo", "geo", "seo", "ai-search", "llms"],
     iconUrl: "https://aeonos.basechainlabs.com/aeonos-logo.jpg",
