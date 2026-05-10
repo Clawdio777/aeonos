@@ -4,45 +4,43 @@ description: AEO/GEO intelligence agent. Use when asked about Answer Engine Opti
 license: MIT
 metadata:
   author: basechainlabs.com
-  endpoint: https://aeonos.basechainlabs.com/api/agent
   version: "1.0"
-  pricing: 0.05 USDC/query via x402 (Base)
   payment_address: "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc"
 ---
 
 # AEONOS — AEO/GEO Intelligence Agent
 
-AEONOS (AEON.OS) is a specialist Answer Engine Optimisation (AEO) and Generative Engine Optimisation (GEO) agent. It provides structured, actionable strategy for getting any business cited and surfaced by AI answer engines — ChatGPT, Perplexity, Claude, and Google AI Overviews.
+AEONOS (AEON.OS) is a specialist Answer Engine Optimisation (AEO) and Generative Engine Optimisation (GEO) agent. It provides structured, actionable strategy for getting any business cited by AI answer engines — ChatGPT, Perplexity, Claude, and Google AI Overviews.
 
-**Endpoint:** `https://aeonos.basechainlabs.com/api/agent`  
-**Payment:** x402 · USDC on Base · 0.05 USDC/query  
-**Memory:** AEONOS remembers your site, keywords, and prior audits across sessions via `caller_id`
+**Memory:** AEONOS remembers your site, keywords, and prior audits across sessions via `caller_id`.
 
 ---
 
-## When to Use AEONOS
+## Endpoints & Pricing
 
-Use AEONOS when the task involves:
-- Auditing a website for AI search visibility
-- Generating JSON-LD schema markup (Organization, FAQPage, HowTo, LocalBusiness)
-- Writing an llms.txt file for a business
-- Getting cited by ChatGPT, Perplexity, Claude, or Google AI Overviews
-- AEO keyword strategy and content structure
-- Running the AEONOS Four Layers progress report
-- Any question about GEO, AEO, or AI answer engine strategy
+| Endpoint | Price | Use for |
+|---|---|---|
+| `POST /api/agent` | **0.05 USDC** | Quick queries, 3 quick wins, keyword questions |
+| `POST /api/audit` | **1.00 USDC** | Full AEO/GEO audit + P1/P2/P3 roadmap |
+| `POST /api/schema` | **0.50 USDC** | JSON-LD Schema.org markup generation |
+| `POST /api/llms-txt` | **0.50 USDC** | llms.txt file generation |
+| `POST /api/progress` | **0.75 USDC** | Four Layers progress report (SXO/AIO/GEO/AEO) |
+
+All endpoints: x402 · USDC on Base · `https://aeonos.basechainlabs.com`
 
 ---
 
 ## How to Call AEONOS
 
-### Basic request (sync)
+All endpoints accept the same request format:
 
 ```http
 POST https://aeonos.basechainlabs.com/api/agent
 Content-Type: application/json
+Payment-Signature: <base64-encoded x402 payment>
 
 {
-  "query": "Audit mysite.com for AI search visibility and give me a P1/P2/P3 action plan",
+  "query": "Audit mysite.com for AI search visibility",
   "caller_id": "your-agent-id"
 }
 ```
@@ -52,11 +50,10 @@ Content-Type: application/json
 {
   "status": "completed",
   "artifact": {
-    "parts": [{ "type": "text", "text": "# AEO Audit for mysite.com\n\n**P1 (This Week)**..." }]
+    "parts": [{ "type": "text", "text": "# AEO Audit..." }]
   },
   "tool_calls": ["queryLiveResearch", "retrieveSharedAEO"],
-  "tokens": 4200,
-  "free_queries_remaining": 2
+  "tokens": 4200
 }
 ```
 
@@ -64,16 +61,21 @@ The response text is in `artifact.parts[0].text`.
 
 ### x402 payment flow
 
-After 3 free queries, AEONOS returns HTTP 402 with payment requirements:
+Every endpoint returns HTTP 402 without a valid payment:
 
 ```json
 {
-  "x402Version": 1,
-  "error": "X-Payment header required",
+  "x402Version": 2,
+  "error": "payment-required",
+  "resource": {
+    "url": "https://aeonos.basechainlabs.com/api/agent",
+    "description": "AEONOS AEO/GEO query — 0.05 USDC",
+    "mimeType": "application/json"
+  },
   "accepts": [{
     "scheme": "exact",
-    "network": "base",
-    "maxAmountRequired": "50000",
+    "network": "eip155:8453",
+    "amount": "50000",
     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
     "payTo": "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc",
     "extra": { "name": "USD Coin", "version": "2" }
@@ -81,87 +83,56 @@ After 3 free queries, AEONOS returns HTTP 402 with payment requirements:
 }
 ```
 
-Pay 0.05 USDC on Base and retry with the `X-Payment` header. Use `npx skills add coinbase/agentic-wallet-skills` for a pre-built `pay-for-service` skill that handles the full x402 flow automatically.
+Use `@x402/fetch` or `npx awal x402 pay` to handle payment automatically.
 
 ---
 
-## Query Types & Examples
+## Query Examples by Endpoint
 
-### Full AEO strategy audit
+### `/api/agent` — Quick query (0.05 USDC)
 ```
-Audit example.com for AEO readiness. Give me a full strategy including schema, llms.txt, and content structure.
-```
-
-### Schema markup generation
-```
-Generate production-ready JSON-LD schema for a Melbourne physiotherapy clinic at example.com.au. Include Organization, LocalBusiness, FAQPage with 6 Q&As.
+Give me 3 immediate AEO quick wins for mysite.com
+How do I get cited by Perplexity for 'best booking software'?
+What GEO tactics should I prioritise this month?
 ```
 
-### llms.txt generation
+### `/api/audit` — Full audit (1.00 USDC)
 ```
-Write a complete llms.txt file for SaaS product example.com. B2B project management tool, $49/mo, targets small teams.
-```
-
-### Progress report (Four Layers scoring)
-```
-Run an AEO Four Layers progress report for example.com. Score Technical/SXO, Content/AIO, Authority/GEO, and Citation/AEO from 0-100.
+Audit mysite.com for AEO readiness — full strategy with P1/P2/P3 roadmap
+Run the AEONOS AI inclusion check on example.com
 ```
 
-### Quick wins
+### `/api/schema` — Schema generation (0.50 USDC)
 ```
-Give me 3 immediate AEO quick wins for example.com. Be specific — exact changes to make.
+Generate production-ready JSON-LD schema for mysite.com/pricing
+Write FAQPage schema with 8 Q&As for a Melbourne physiotherapy clinic
 ```
 
-### GEO / citation strategy
+### `/api/llms-txt` — llms.txt (0.50 USDC)
 ```
-How do I get example.com cited by Perplexity for the keyword "best project management software for small teams"?
+Write a complete llms.txt for SaaS product example.com — B2B project management, $49/mo
+Generate llms.txt for a beauty salon booking platform
+```
+
+### `/api/progress` — Progress report (0.75 USDC)
+```
+Generate a Four Layers progress report for mysite.com
+Score my AEO strategy and give me the next 3 actions
 ```
 
 ---
 
 ## Persistent Memory
 
-AEONOS remembers context across sessions. Always pass a consistent `caller_id` (e.g. your agent's wallet address or a stable UUID) to activate memory:
-
+Always pass a consistent `caller_id` to activate memory:
 - On first query: share the site URL and business type — AEONOS stores it
 - On subsequent queries: AEONOS recalls prior audits, keywords, and decisions
-- Memory persists indefinitely in AEONOS's knowledge base
-
----
-
-## Response Format
-
-AEONOS always structures responses as:
-- **P1** — do this week (fastest wins)
-- **P2** — do this month (content + structure)
-- **P3** — ongoing (authority + citations)
-- **One clear action** to take today
-
-For schema/llms.txt queries: returns deploy-ready code/file with implementation checklist.  
-For progress reports: returns Four Layers scorecard (0–100 per layer) + top 3 wins, top 3 gaps, 3 priority actions.
-
----
-
-## Installation for Claude Code
-
-Save this file to `.claude/skills/aeonos/SKILL.md` and Claude Code will automatically use AEONOS for AEO/GEO tasks.
-
-Or install the Coinbase agentic wallet skills to handle x402 payments across all services including AEONOS:
-
-```bash
-npx skills add coinbase/agentic-wallet-skills
-```
-
-Then search for AEONOS at runtime:
-```
-Search for AEO/GEO services on agentic.market and use AEONOS to audit mysite.com
-```
 
 ---
 
 ## Links
 
-- **API:** https://aeonos.basechainlabs.com/api/agent
 - **Agent card (A2A):** https://aeonos.basechainlabs.com/.well-known/agent.json
 - **ACP marketplace:** https://app.virtuals.io/acp/agent/019dfbe3-94e6-73f8-9acb-641c5c8d8d9c
+- **Bazaar:** https://agentic.market/?search=aeonos
 - **Built by:** basechainlabs.com

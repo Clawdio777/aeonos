@@ -31,9 +31,11 @@
     }
   ],
   "functions": {
-    "api/agent.ts": {
-      "maxDuration": 300
-    }
+    "api/agent.ts":    { "maxDuration": 300 },
+    "api/audit.ts":    { "maxDuration": 300 },
+    "api/schema.ts":   { "maxDuration": 300 },
+    "api/llms-txt.ts": { "maxDuration": 300 },
+    "api/progress.ts": { "maxDuration": 300 }
   },
   "crons": [
     {
