@@ -52,19 +52,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Payment, Accept");
   res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
-  res.setHeader("Access-Control-Expose-Headers", "X-Payment-Required-Response, X-Payment-Response");
+  res.setHeader("Access-Control-Expose-Headers", "PAYMENT-REQUIRED, X-Payment-Response");
 
   if (req.method === "OPTIONS") return res.status(200).end();
 
   // ── Agent card discovery ─────────────────────────────────────────────────────
-  // Plain GET (no params) or ?agent-card → return agent card for 8004scan / ACP discovery
-  if (req.method === "GET" && (req.query["agent-card"] || Object.keys(req.query).length === 0)) {
+  // Only return agent card when explicitly requested via ?agent-card param.
+  // Plain GET returns 402 — required by x402 v2 spec for Bazaar discovery.
+  if (req.method === "GET" && req.query["agent-card"]) {
     return res.json(buildAgentCard());
   }
 
   // ── Async task polling ───────────────────────────────────────────────────────
   if (req.method === "GET" && req.query.task_id) {
     return handleTaskPoll(req, res);
+  }
+
+  // ── Plain GET (no params) → 402 for x402 discovery compliance ───────────────
+  if (req.method === "GET") {
+    return send402(res, buildPaymentRequirements(req));
   }
 
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -468,7 +474,7 @@ function send402(
     extensions: BAZAAR_EXTENSION,
   };
   res.setHeader(
-    "X-Payment-Required-Response",
+    "PAYMENT-REQUIRED",
     Buffer.from(JSON.stringify(body)).toString("base64")
   );
   return res.status(402).json(body);
