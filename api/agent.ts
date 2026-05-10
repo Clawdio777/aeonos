@@ -34,7 +34,7 @@ const facilitatorClient = new HTTPFacilitatorClient(
     : {}
 );
 
-const PRICE_PER_QUERY_USDC = 0.15;
+const PRICE_PER_QUERY_USDC = 0.05;
 
 const db = createClient(
   process.env.SUPABASE_URL!,
@@ -386,7 +386,7 @@ function buildPaymentRequirements(_req: VercelRequest): PaymentRequirements {
   return {
     scheme:            "exact",
     network:           "eip155:8453",   // CAIP-2 required for x402 v2
-    amount:            "150000",         // 0.15 USDC — 6 decimals
+    amount:            "50000",          // 0.05 USDC — 6 decimals
     payTo:             (process.env.PAYMENT_ADDRESS || "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc").trim(),
     maxTimeoutSeconds: 300,
     asset:             "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC on Base
@@ -480,7 +480,7 @@ function send402(
     error:       errorReason ?? "payment-required",
     resource: {
       url:         `${base}/api/agent`,
-      description: "AEONOS AEO/GEO query — 0.15 USDC",
+      description: "AEONOS AEO/GEO query — 0.05 USDC",
       mimeType:    "application/json",
     },
     accepts:    [paymentReqs],
