@@ -480,7 +480,7 @@ function send402(
     error:       errorReason ?? "payment-required",
     resource: {
       url:         `${base}/api/agent`,
-      description: "AEONOS AEO/GEO query — 0.05 USDC",
+      description: "AEONOS — AI Search Visibility Agent. AEO, GEO & SEO strategy: on-page audits, JSON-LD schema, llms.txt, E-E-A-T scoring, AI inclusion checks for ChatGPT, Perplexity, Claude & Google AI Overviews. 0.05 USDC/query.",
       mimeType:    "application/json",
     },
     accepts:    [paymentReqs],
