@@ -11,7 +11,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-import seedData from "./seed.json";
+import seedData from "./seed.json" with { type: "json" };
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY!;

@@ -16,27 +16,23 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { useFacilitator } from "x402/verify";
-import type { PaymentRequirements as X402PaymentRequirements } from "x402/types";
+import { HTTPFacilitatorClient } from "@x402/core/server";
+import type { PaymentRequired, PaymentPayload, PaymentRequirements } from "@x402/core/types";
+import { x402Version as X402_VERSION } from "@x402/core";
 import { createFacilitatorConfig } from "@coinbase/x402";
 import { declareDiscoveryExtension } from "@x402/extensions";
 import { runAgent } from "../src/agent.js";
 
 // ── Coinbase CDP facilitator for Base mainnet ──────────────────────────────────
 // .trim() is critical — Vercel env vars can have trailing newlines
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const facilitator = useFacilitator(
+const facilitatorClient = new HTTPFacilitatorClient(
   process.env.CDP_API_KEY_NAME && process.env.CDP_API_KEY_PRIVATE_KEY
     ? createFacilitatorConfig(
         process.env.CDP_API_KEY_NAME.trim(),
         process.env.CDP_API_KEY_PRIVATE_KEY.trim()
-      ) as any
-    : undefined
+      )
+    : {}
 );
-
-const { verify, settle } = facilitator;
-type PaymentPayload = any;
-type PaymentRequirements = X402PaymentRequirements;
 
 const PRICE_PER_QUERY_USDC = 0.15;
 const FREE_TIER_QUERIES = 3;
@@ -52,7 +48,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Payment, Accept");
   res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
-  res.setHeader("Access-Control-Expose-Headers", "PAYMENT-REQUIRED, X-Payment-Response");
+  res.setHeader("Access-Control-Expose-Headers", "PAYMENT-REQUIRED, PAYMENT-RESPONSE, PAYMENT-SIGNATURE");
 
   if (req.method === "OPTIONS") return res.status(200).end();
 
@@ -93,8 +89,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     caller_id = body?.caller_id || extractCallerId(req) || "anon";
   }
 
-  // ── x402 payment gate (official Coinbase x402 format) ────────────────────────
-  const xPaymentHeader = req.headers["x-payment"] as string | undefined;
+  // ── x402 payment gate (x402 v2 protocol) ─────────────────────────────────────
+  // v2 uses "payment-signature"; also accept legacy "x-payment" for backward compat
+  const xPaymentHeader = (req.headers["payment-signature"] ?? req.headers["x-payment"]) as string | undefined;
 
   // Discovery probe: no query body + no payment = CDP Facilitator or agent discovery probe.
   // Always return 402 so CDP can extract extensions.bazaar and index the service.
@@ -114,17 +111,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return send402(res, paymentReqs);
     }
 
-    // Decode + verify
+    // Decode payment payload (base64 JSON — same encoding for v1 and v2)
     let paymentPayload: PaymentPayload;
     try {
-      paymentPayload = JSON.parse(Buffer.from(xPaymentHeader, "base64").toString("utf8"));
+      paymentPayload = JSON.parse(Buffer.from(xPaymentHeader, "base64").toString("utf8")) as PaymentPayload;
     } catch {
       return send402(res, paymentReqs, "invalid_payment");
     }
 
     let verifyResult: { isValid: boolean; invalidReason?: string };
     try {
-      verifyResult = await verify(paymentPayload, paymentReqs);
+      verifyResult = await facilitatorClient.verify(paymentPayload, paymentReqs);
     } catch (e: any) {
       console.error("[aeonos] x402 verify error:", e.message);
       return res.status(500).json({ error: "Payment verification failed", detail: e.message });
@@ -134,9 +131,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Settle — locks in the payment on-chain
-    let settleResult: { success: boolean; errorReason?: string; transaction: string; network: string };
+    let settleResult: { success: boolean; errorReason?: string; transaction?: string; network?: string };
     try {
-      settleResult = await settle(paymentPayload, paymentReqs);
+      settleResult = await facilitatorClient.settle(paymentPayload, paymentReqs);
     } catch (e: any) {
       console.error("[aeonos] x402 settle error:", e.message);
       return res.status(500).json({ error: "Payment settlement failed", detail: e.message });
@@ -145,9 +142,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return send402(res, paymentReqs, settleResult.errorReason);
     }
 
-    // Signal settlement to the client
+    // Signal settlement to the client (v2 header: PAYMENT-RESPONSE)
     res.setHeader(
-      "X-Payment-Response",
+      "PAYMENT-RESPONSE",
       Buffer.from(JSON.stringify(settleResult)).toString("base64")
     );
   }
@@ -387,25 +384,22 @@ function jsonRpcError(
 
 // ── x402 helpers ──────────────────────────────────────────────────────────────
 
-function buildPaymentRequirements(req: VercelRequest): PaymentRequirements {
-  const base = process.env.AGENT_BASE_URL || "https://aeonosai.vercel.app";
+// v2 PaymentRequirements: `amount` (not maxAmountRequired), no resource/description/mimeType
+function buildPaymentRequirements(_req: VercelRequest): PaymentRequirements {
   return {
-    scheme:             "exact",
-    network:            "base",
-    maxAmountRequired:  "150000", // 0.15 USDC — 6 decimals
-    resource:           `${base}/api/agent` as `${string}://${string}`,
-    description:        "AEONOS AEO/GEO query — 0.15 USDC",
-    mimeType:           "application/json",
-    payTo:              (process.env.PAYMENT_ADDRESS || "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc").trim(),
-    maxTimeoutSeconds:  300,
-    asset:              "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC on Base
+    scheme:            "exact",
+    network:           "eip155:8453",   // CAIP-2 required for x402 v2
+    amount:            "150000",         // 0.15 USDC — 6 decimals
+    payTo:             (process.env.PAYMENT_ADDRESS || "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc").trim(),
+    maxTimeoutSeconds: 300,
+    asset:             "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC on Base
     // EIP-712 domain params for USDC on Base — required for correct signature
-    extra:              { name: "USD Coin", version: "2" },
+    extra:             { name: "USD Coin", version: "2" },
   };
 }
 
-// Bazaar discovery extension — proper declareDiscoveryExtension() format for agentic.market indexing
-const BAZAAR_EXTENSION = declareDiscoveryExtension({
+// Bazaar discovery extension — x402 v2 format for agentic.market indexing
+const _bazaarBase = declareDiscoveryExtension({
   bodyType: "json",
   input: {
     query: "Audit mysite.com for AI search visibility and get a P1/P2/P3 action plan",
@@ -462,15 +456,31 @@ const BAZAAR_EXTENSION = declareDiscoveryExtension({
   },
 });
 
+// Enrich with optional Bazaar metadata (serviceName/tags/iconUrl) directly on the bazaar object
+const BAZAAR_EXTENSION = {
+  bazaar: {
+    ..._bazaarBase.bazaar,
+    serviceName: "AEONOS",
+    tags: ["aeo", "geo", "seo", "ai-search", "llms"],
+    iconUrl: "https://aeonos.basechainlabs.com/aeonos-logo.jpg",
+  },
+};
+
 function send402(
   res: VercelResponse,
   paymentReqs: PaymentRequirements,
   errorReason?: string
 ) {
-  const body = {
-    x402Version: 1,
-    error:   errorReason ?? "X-Payment header required",
-    accepts: [paymentReqs],
+  const base = process.env.AGENT_BASE_URL || "https://aeonos.basechainlabs.com";
+  const body: PaymentRequired = {
+    x402Version: X402_VERSION,  // 2
+    error:       errorReason ?? "payment-required",
+    resource: {
+      url:         `${base}/api/agent`,
+      description: "AEONOS AEO/GEO query — 0.15 USDC",
+      mimeType:    "application/json",
+    },
+    accepts:    [paymentReqs],
     extensions: BAZAAR_EXTENSION,
   };
   res.setHeader(
