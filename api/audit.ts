@@ -14,7 +14,7 @@ import { runAgent } from "../src/agent.js";
 const PRICE_USDC = 1.00;
 const BASE_URL   = () => process.env.AGENT_BASE_URL || "https://aeonos.basechainlabs.com";
 const RESOURCE_URL  = () => `${BASE_URL()}/api/audit`;
-const RESOURCE_DESC = "AEONOS full AEO/GEO audit — comprehensive 4-layer strategy + P1/P2/P3 roadmap. 1.00 USDC.";
+const RESOURCE_DESC = "Full AI search visibility audit — AEO/GEO/SEO 4-layer strategy, AI inclusion check, schema gaps, llms.txt review, P1/P2/P3 roadmap. 1.00 USDC.";
 
 const BAZAAR = buildBazaarExtension({
   serviceName:      "AEONOS — Full Audit",
