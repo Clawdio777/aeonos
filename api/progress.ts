@@ -14,7 +14,7 @@ import { runAgent } from "../src/agent.js";
 const PRICE_USDC    = 0.75;
 const BASE_URL      = () => process.env.AGENT_BASE_URL || "https://aeonos.basechainlabs.com";
 const RESOURCE_URL  = () => `${BASE_URL()}/api/progress`;
-const RESOURCE_DESC = "AEONOS AEO progress report — Four Layers scoring (SXO/AIO/GEO/AEO), what's working, and next 3 actions. 0.75 USDC.";
+const RESOURCE_DESC = "AI search visibility progress report — Four Layers scoring (SXO/AIO/GEO/AEO), what's working, gaps, and your next 3 highest-impact actions. 0.75 USDC.";
 
 const BAZAAR = buildBazaarExtension({
   serviceName:      "AEONOS — Progress Report",

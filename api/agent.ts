@@ -480,7 +480,7 @@ function send402(
     error:       errorReason ?? "payment-required",
     resource: {
       url:         `${base}/api/agent`,
-      description: "Get cited by ChatGPT, Perplexity, Claude & Google AI Overviews — AEO/GEO strategy, schema markup, llms.txt, and AI visibility audits for any website. 0.05 USDC/query.",
+      description: "Improve AI search visibility and get cited by ChatGPT, Perplexity, Claude & Google AI Overviews. AEO/GEO/SEO strategy, AI visibility audits, schema markup, llms.txt. 0.05 USDC/query.",
       mimeType:    "application/json",
     },
     accepts:    [paymentReqs],

@@ -14,7 +14,7 @@ import { runAgent } from "../src/agent.js";
 const PRICE_USDC    = 0.50;
 const BASE_URL      = () => process.env.AGENT_BASE_URL || "https://aeonos.basechainlabs.com";
 const RESOURCE_URL  = () => `${BASE_URL()}/api/schema`;
-const RESOURCE_DESC = "AEONOS JSON-LD schema generation — complete Schema.org markup for any page. 0.50 USDC.";
+const RESOURCE_DESC = "JSON-LD Schema.org markup generation for AI search visibility — FAQPage, Product, Service, LocalBusiness, HowTo and more. Boosts AI citations and rich results. 0.50 USDC.";
 
 const BAZAAR = buildBazaarExtension({
   serviceName:      "AEONOS — Schema Generator",

@@ -14,7 +14,7 @@ import { runAgent } from "../src/agent.js";
 const PRICE_USDC    = 0.50;
 const BASE_URL      = () => process.env.AGENT_BASE_URL || "https://aeonos.basechainlabs.com";
 const RESOURCE_URL  = () => `${BASE_URL()}/api/llms-txt`;
-const RESOURCE_DESC = "AEONOS llms.txt generator — structured AI-crawler file for ChatGPT, Perplexity & Claude ingestion. 0.50 USDC.";
+const RESOURCE_DESC = "Generate llms.txt to improve AI search visibility — structured file for ChatGPT, Perplexity & Claude crawlers. Helps AI engines understand and cite your business. 0.50 USDC.";
 
 const BAZAAR = buildBazaarExtension({
   serviceName:      "AEONOS — llms.txt Generator",
