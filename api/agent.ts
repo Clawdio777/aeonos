@@ -35,7 +35,6 @@ const facilitatorClient = new HTTPFacilitatorClient(
 );
 
 const PRICE_PER_QUERY_USDC = 0.15;
-const FREE_TIER_QUERIES = 3;
 
 const db = createClient(
   process.env.SUPABASE_URL!,
@@ -102,52 +101,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return jsonRpcError(res, isJsonRpc, jsonRpcId, -32602, "Missing query");
   }
 
-  const queryCount = await getQueryCount(caller_id);
+  // x402 payment gate — always required, no free tier
+  const paymentReqs = buildPaymentRequirements(req);
 
-  if (queryCount >= FREE_TIER_QUERIES) {
-    const paymentReqs = buildPaymentRequirements(req);
-
-    if (!xPaymentHeader) {
-      return send402(res, paymentReqs);
-    }
-
-    // Decode payment payload (base64 JSON — same encoding for v1 and v2)
-    let paymentPayload: PaymentPayload;
-    try {
-      paymentPayload = JSON.parse(Buffer.from(xPaymentHeader, "base64").toString("utf8")) as PaymentPayload;
-    } catch {
-      return send402(res, paymentReqs, "invalid_payment");
-    }
-
-    let verifyResult: { isValid: boolean; invalidReason?: string };
-    try {
-      verifyResult = await facilitatorClient.verify(paymentPayload, paymentReqs);
-    } catch (e: any) {
-      console.error("[aeonos] x402 verify error:", e.message);
-      return res.status(500).json({ error: "Payment verification failed", detail: e.message });
-    }
-    if (!verifyResult.isValid) {
-      return send402(res, paymentReqs, verifyResult.invalidReason);
-    }
-
-    // Settle — locks in the payment on-chain
-    let settleResult: { success: boolean; errorReason?: string; transaction?: string; network?: string };
-    try {
-      settleResult = await facilitatorClient.settle(paymentPayload, paymentReqs);
-    } catch (e: any) {
-      console.error("[aeonos] x402 settle error:", e.message);
-      return res.status(500).json({ error: "Payment settlement failed", detail: e.message });
-    }
-    if (!settleResult.success) {
-      return send402(res, paymentReqs, settleResult.errorReason);
-    }
-
-    // Signal settlement to the client (v2 header: PAYMENT-RESPONSE)
-    res.setHeader(
-      "PAYMENT-RESPONSE",
-      Buffer.from(JSON.stringify(settleResult)).toString("base64")
-    );
+  if (!xPaymentHeader) {
+    return send402(res, paymentReqs);
   }
+
+  // Decode payment payload (base64 JSON)
+  let paymentPayload: PaymentPayload;
+  try {
+    paymentPayload = JSON.parse(Buffer.from(xPaymentHeader, "base64").toString("utf8")) as PaymentPayload;
+  } catch {
+    return send402(res, paymentReqs, "invalid_payment");
+  }
+
+  let verifyResult: { isValid: boolean; invalidReason?: string };
+  try {
+    verifyResult = await facilitatorClient.verify(paymentPayload, paymentReqs);
+  } catch (e: any) {
+    console.error("[aeonos] x402 verify error:", e.message);
+    return res.status(500).json({ error: "Payment verification failed", detail: e.message });
+  }
+  if (!verifyResult.isValid) {
+    return send402(res, paymentReqs, verifyResult.invalidReason);
+  }
+
+  // Settle — locks in the payment on-chain
+  let settleResult: { success: boolean; errorReason?: string; transaction?: string; network?: string };
+  try {
+    settleResult = await facilitatorClient.settle(paymentPayload, paymentReqs);
+  } catch (e: any) {
+    console.error("[aeonos] x402 settle error:", e.message);
+    return res.status(500).json({ error: "Payment settlement failed", detail: e.message });
+  }
+  if (!settleResult.success) {
+    return send402(res, paymentReqs, settleResult.errorReason);
+  }
+
+  // Signal settlement to the client (v2 header: PAYMENT-RESPONSE)
+  res.setHeader(
+    "PAYMENT-RESPONSE",
+    Buffer.from(JSON.stringify(settleResult)).toString("base64")
+  );
+
+  const queryCount = await getQueryCount(caller_id);
 
   // paymentHeader used downstream for logging (paid vs free)
   const paymentHeader = xPaymentHeader;
@@ -191,7 +189,6 @@ async function handleSync(
     tool_calls: result.tool_calls_made,
     tokens: result.tokens_used,
     query_count: queryCount + 1,
-    free_queries_remaining: Math.max(0, FREE_TIER_QUERIES - queryCount - 1),
   };
 
   return isJsonRpc
@@ -435,7 +432,6 @@ const _bazaarBase = declareDiscoveryExtension({
       },
       tool_calls: ["queryLiveResearch", "retrieveSharedAEO", "storeCallerMemory"],
       tokens: 4800,
-      free_queries_remaining: 0,
     },
     schema: {
       properties: {
@@ -450,7 +446,6 @@ const _bazaarBase = declareDiscoveryExtension({
           description: "Tools used: queryLiveResearch, retrieveSharedAEO, retrieveCallerMemory, storeCallerMemory",
         },
         tokens: { type: "number" },
-        free_queries_remaining: { type: "number" },
       },
     },
   },
@@ -564,7 +559,6 @@ function buildAgentCard() {
     ],
     pricing: {
       default: `${PRICE_PER_QUERY_USDC} USDC per query`,
-      free_tier: `First ${FREE_TIER_QUERIES} queries free`,
       bulk: "0.10 USDC per query (10+ queries/session)",
     },
     protocols: ["x402", "a2a"],
