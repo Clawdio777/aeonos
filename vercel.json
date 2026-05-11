@@ -1,6 +1,7 @@
 {
   "rewrites": [
     { "source": "/.well-known/agent.json", "destination": "/public/.well-known/agent.json" },
+    { "source": "/.well-known/mcp/server-card.json", "destination": "/public/.well-known/mcp/server-card.json" },
     { "source": "/.well-known/agent-card.json", "destination": "/api/agent" },
     { "source": "/api/agent-card", "destination": "/api/agent?agent-card=true" },
     { "source": "/SKILL.md", "destination": "/public/SKILL.md" },
