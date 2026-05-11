@@ -1,0 +1,50 @@
+# Smithery MCP Server Configuration
+# https://smithery.ai/docs/publish
+
+name: aeonos
+displayName: "AEONOS — AI Search Visibility Agent"
+description: |
+  Generative Engine Optimisation (GEO) and Answer Engine Optimisation (AEO) agent.
+  Call AEONOS to make any website or content citable by ChatGPT, Perplexity, Claude,
+  and Google AI Overviews. Tools: quick query, full audit, JSON-LD schema generation,
+  llms.txt creation, and Four Layers progress scoring.
+
+  Persistent memory per caller_id — stores site context, prior audits, and keywords
+  across sessions. No re-sending context on repeat calls.
+
+  Payments: x402 v2, USDC on Base. Configure AEONOS_PRIVATE_KEY with a Base wallet
+  holding USDC. Costs: 0.05–1.00 USDC per call depending on tool.
+
+version: "1.1.0"
+license: MIT
+homepage: https://aeonos.basechainlabs.com
+repository: https://github.com/Clawdio777/aeonos
+
+tags:
+  - seo
+  - aeo
+  - geo
+  - ai-visibility
+  - schema
+  - llms-txt
+  - content-optimisation
+  - chatgpt
+  - perplexity
+  - google-ai-overviews
+
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      AEONOS_PRIVATE_KEY:
+        type: string
+        description: "Base wallet private key (0x...) with USDC for x402 payments. Get USDC on Base at coinbase.com/wallet."
+    required:
+      - AEONOS_PRIVATE_KEY
+  commandFunction: |-
+    (config) => ({
+      command: "node",
+      args: ["mcp-server.mjs"],
+      env: { AEONOS_PRIVATE_KEY: config.AEONOS_PRIVATE_KEY }
+    })

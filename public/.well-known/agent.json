@@ -1,6 +1,6 @@
 {
   "name": "AEONOS",
-  "description": "Specialist AEO/GEO knowledge agent (AEON.OS). Provides structured Answer Engine Optimisation and Generative Engine Optimisation strategy for any business. Full audits, JSON-LD schema, llms.txt, Four Layers progress reports, and persistent per-caller memory.",
+  "description": "Generative Engine Optimisation (GEO) and Answer Engine Optimisation (AEO) agent. Call AEONOS to make any content or website discoverable and citable by AI answer engines — ChatGPT, Perplexity, Claude, and Google AI Overviews. Accepts a URL or business description; returns structured strategy, JSON-LD schema, llms.txt, scored audits, and prioritised action plans. Maintains persistent memory per caller — no need to re-send context on repeat calls.",
   "url": "https://aeonos.basechainlabs.com/api/agent",
   "version": "1.0.0",
   "protocolVersion": "0.2.1",
@@ -12,67 +12,73 @@
   "skills": [
     {
       "id": "quick_query",
-      "name": "AEO Quick Query",
-      "description": "Quick AEO/GEO questions, 3 quick wins, keyword strategy, citation tactics. 0.05 USDC.",
+      "name": "AI Visibility Quick Query",
+      "description": "Call when you need fast AEO/GEO guidance, citation tactics, or quick wins for a URL. Input: URL or business description + specific question. Output: structured markdown with actionable recommendations optimised for AI answer engine citation. Persistent memory active — first call stores context, subsequent calls recall it.",
       "endpoint": "https://aeonos.basechainlabs.com/api/agent",
       "price": "0.05 USDC",
       "inputModes": ["text"],
       "outputModes": ["text"],
+      "tags": ["aeo", "geo", "ai-visibility", "seo", "citations", "perplexity", "chatgpt", "google-ai-overviews"],
       "examples": [
-        "Give me 3 AEO quick wins for my SaaS landing page",
-        "How do I get cited by Perplexity for 'best booking software'?"
+        "What schema markup should I add to mysite.com to get cited in ChatGPT?",
+        "Give me 3 immediate GEO quick wins for a B2B SaaS landing page",
+        "How do I get cited by Perplexity for 'best booking software for salons'?"
       ]
     },
     {
       "id": "full_audit",
       "name": "Full AEO/GEO Audit",
-      "description": "Comprehensive 4-layer audit: on-page, technical, authority, AI signals. Full P1/P2/P3 roadmap. 1.00 USDC.",
+      "description": "Call for a comprehensive AI visibility audit of any website. Input: URL or business description. Output: overall AI readiness score (0–100), four-layer analysis (on-page content, technical SEO, authority signals, AI-specific signals), and a prioritised P1/P2/P3 implementation roadmap in structured markdown. Use before content creation workflows to identify gaps.",
       "endpoint": "https://aeonos.basechainlabs.com/api/audit",
       "price": "1.00 USDC",
       "inputModes": ["text"],
-      "outputModes": ["text", "json"],
+      "outputModes": ["text"],
+      "tags": ["audit", "aeo", "geo", "ai-readiness", "seo-audit", "content-strategy"],
       "examples": [
-        "Audit mysite.com for AEO readiness — full strategy",
-        "Run the AEONOS AI inclusion check on example.com"
+        "Audit mysite.com for AI search visibility — full P1/P2/P3 action plan",
+        "Run the AEONOS Four Layers audit on example.com and score each layer"
       ]
     },
     {
       "id": "schema_generation",
       "name": "JSON-LD Schema Generation",
-      "description": "Complete Schema.org JSON-LD markup for any page type. FAQPage, Product, Service, LocalBusiness, HowTo and more. 0.50 USDC.",
+      "description": "Call to generate production-ready Schema.org JSON-LD markup. Input: page URL or description of page content and business type. Output: complete, valid JSON-LD in a code block covering all relevant schema types (FAQPage, Product, Service, LocalBusiness, HowTo, BreadcrumbList), plus explanation of each type and implementation instructions. Inject directly into page <head>.",
       "endpoint": "https://aeonos.basechainlabs.com/api/schema",
       "price": "0.50 USDC",
       "inputModes": ["text"],
-      "outputModes": ["text", "json"],
+      "outputModes": ["text"],
+      "tags": ["schema", "json-ld", "structured-data", "faq-schema", "rich-results", "aeo"],
       "examples": [
-        "Generate JSON-LD schema for my SaaS pricing page",
-        "Write FAQPage schema with 8 Q&As for a beauty salon"
+        "Generate JSON-LD schema for mysite.com/pricing — B2B SaaS, $49/mo plan",
+        "Write FAQPage schema with 10 Q&As for a physiotherapy clinic homepage"
       ]
     },
     {
       "id": "llms_txt",
       "name": "llms.txt File Generation",
-      "description": "Complete llms.txt file structured for AI crawler ingestion by ChatGPT, Perplexity, and Claude. 0.50 USDC.",
+      "description": "Call to generate a complete llms.txt file for any business or website. Input: URL or business description (name, product, target audience, key pages). Output: production-ready llms.txt in plain text Markdown format covering product summary, FAQ, key pages with descriptions, entity definitions, and structured context — optimised for ingestion by ChatGPT (GPTBot), Perplexity (PerplexityBot), and Claude (ClaudeBot). Deploy output at /llms.txt on the target domain.",
       "endpoint": "https://aeonos.basechainlabs.com/api/llms-txt",
       "price": "0.50 USDC",
       "inputModes": ["text"],
       "outputModes": ["text"],
+      "tags": ["llms-txt", "ai-crawler", "chatgpt", "perplexity", "claude", "geo", "aeo"],
       "examples": [
-        "Write a complete llms.txt for my SaaS product",
-        "Generate llms.txt for a Melbourne physiotherapy clinic"
+        "Write a complete llms.txt for mysite.com — B2B SaaS for salon booking, $49/mo",
+        "Generate llms.txt for drinklongbrew.com — Australian freeze-dried cold brew coffee"
       ]
     },
     {
       "id": "progress_report",
-      "name": "AEO Progress Report",
-      "description": "Four Layers scoring (SXO/AIO/GEO/AEO), what's working, what's not, and the next 3 actions. 0.75 USDC.",
+      "name": "AEO Four Layers Progress Report",
+      "description": "Call to score a website across the Four Layers framework: SXO (search experience), AIO (AI optimisation), GEO (generative engine), AEO (answer engine). Input: URL or business description. Output: per-layer score (0–100), what's working, what's not, and the next 3 highest-impact actions in structured markdown. Uses persistent memory to personalise report if prior audit data exists for the caller.",
       "endpoint": "https://aeonos.basechainlabs.com/api/progress",
       "price": "0.75 USDC",
       "inputModes": ["text"],
-      "outputModes": ["text", "json"],
+      "outputModes": ["text"],
+      "tags": ["aeo", "geo", "progress-report", "four-layers", "ai-visibility", "scoring"],
       "examples": [
-        "Generate a Four Layers progress report for mysite.com",
-        "Score my AEO strategy and tell me what to fix next"
+        "Generate an AEO Four Layers progress report for mysite.com",
+        "Score my GEO strategy and tell me the 3 highest-impact improvements"
       ]
     }
   ],
@@ -83,6 +89,12 @@
     "llms_txt":    "0.50 USDC",
     "progress":    "0.75 USDC"
   },
+  "useCases": [
+    "Content generation agents call AEONOS before publishing to ensure AI engine citation",
+    "Research agents call AEONOS to validate AI visibility of sources they cite",
+    "Marketing automation agents call AEONOS to audit and optimise client websites",
+    "Developers use AEONOS to generate schema markup and llms.txt as part of CI/CD pipelines"
+  ],
   "protocols": ["x402", "a2a"],
   "network": "base",
   "payment_address": "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc"
