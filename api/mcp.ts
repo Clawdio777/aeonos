@@ -35,10 +35,18 @@ const OUTPUT_SCHEMA = {
   required: ["content"],
 };
 
+const TOOL_ANNOTATIONS = {
+  readOnlyHint:    true,
+  destructiveHint: false,
+  idempotentHint:  false,
+  openWorldHint:   true,
+};
+
 const TOOLS = [
   {
     name:        "aeonos_query",
     description: "Ask AEONOS any AEO/GEO question. Get citation tactics, quick wins, keyword strategy, or AI visibility advice for any website. Returns structured Markdown. 0.05 USDC per call.",
+    annotations: TOOL_ANNOTATIONS,
     inputSchema: {
       type:       "object",
       properties: {
@@ -52,6 +60,7 @@ const TOOLS = [
   {
     name:        "aeonos_audit",
     description: "Full AEO/GEO audit. Returns AI readiness score (0–100), four-layer analysis, and P1/P2/P3 action roadmap. 1.00 USDC per call.",
+    annotations: TOOL_ANNOTATIONS,
     inputSchema: {
       type:       "object",
       properties: {
@@ -65,6 +74,7 @@ const TOOLS = [
   {
     name:        "aeonos_schema",
     description: "Generate production-ready JSON-LD Schema.org markup (FAQPage, Product, Service, LocalBusiness, HowTo). Returns valid JSON-LD ready for <head> injection. 0.50 USDC per call.",
+    annotations: TOOL_ANNOTATIONS,
     inputSchema: {
       type:       "object",
       properties: {
@@ -78,6 +88,7 @@ const TOOLS = [
   {
     name:        "aeonos_llms_txt",
     description: "Generate a complete llms.txt file for any website. Structured for ChatGPT (GPTBot), Perplexity (PerplexityBot), and Claude (ClaudeBot). Deploy output at /llms.txt. 0.50 USDC per call.",
+    annotations: TOOL_ANNOTATIONS,
     inputSchema: {
       type:       "object",
       properties: {
@@ -91,6 +102,7 @@ const TOOLS = [
   {
     name:        "aeonos_progress",
     description: "Score a website on the AEO Four Layers framework (SXO/AIO/GEO/AEO). Returns per-layer scores and the next 3 highest-impact actions. 0.75 USDC per call.",
+    annotations: TOOL_ANNOTATIONS,
     inputSchema: {
       type:       "object",
       properties: {
