@@ -17,6 +17,24 @@ import { ExactEvmScheme, toClientEvmSigner } from "@x402/evm";
 
 const BASE_URL = "https://aeonos.basechainlabs.com";
 
+const OUTPUT_SCHEMA = {
+  type: "object",
+  properties: {
+    content: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          type: { type: "string", const: "text", description: "Always 'text'" },
+          text: { type: "string", description: "Structured Markdown response from AEONOS" },
+        },
+        required: ["type", "text"],
+      },
+    },
+  },
+  required: ["content"],
+};
+
 const TOOLS = [
   {
     name:        "aeonos_query",
@@ -29,6 +47,7 @@ const TOOLS = [
       },
       required: ["query"],
     },
+    outputSchema: OUTPUT_SCHEMA,
   },
   {
     name:        "aeonos_audit",
@@ -41,6 +60,7 @@ const TOOLS = [
       },
       required: ["query"],
     },
+    outputSchema: OUTPUT_SCHEMA,
   },
   {
     name:        "aeonos_schema",
@@ -53,6 +73,7 @@ const TOOLS = [
       },
       required: ["query"],
     },
+    outputSchema: OUTPUT_SCHEMA,
   },
   {
     name:        "aeonos_llms_txt",
@@ -65,6 +86,7 @@ const TOOLS = [
       },
       required: ["query"],
     },
+    outputSchema: OUTPUT_SCHEMA,
   },
   {
     name:        "aeonos_progress",
@@ -77,6 +99,7 @@ const TOOLS = [
       },
       required: ["query"],
     },
+    outputSchema: OUTPUT_SCHEMA,
   },
 ];
 
@@ -122,11 +145,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  // Get wallet key from Smithery config header or fallback header
+  // Get wallet key and optional caller ID from Smithery config headers
   const privateKey = (
     req.headers["x-smithery-config-aeonos-private-key"] ??
     req.headers["x-wallet-key"] ??
     process.env.MCP_DEMO_PRIVATE_KEY
+  ) as string | undefined;
+
+  const defaultCallerId = (
+    req.headers["x-smithery-config-caller-id"] ??
+    req.headers["x-caller-id"]
   ) as string | undefined;
 
   const body = req.body as { jsonrpc: string; id: any; method: string; params?: any };
@@ -172,7 +200,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
-      const text = await callAeonos(path, args.query, args.caller_id, privateKey);
+      const text = await callAeonos(path, args.query, args.caller_id || defaultCallerId || "", privateKey);
       return res.json({
         jsonrpc: "2.0", id,
         result: { content: [{ type: "text", text }] },
