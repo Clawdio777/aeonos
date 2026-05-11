@@ -180,7 +180,70 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (method === "prompts/list") {
-    return res.json({ jsonrpc: "2.0", id, result: { prompts: [] } });
+    return res.json({
+      jsonrpc: "2.0", id,
+      result: {
+        prompts: [
+          {
+            name:        "aeo-quick-wins",
+            description: "Get 3 immediate AEO/GEO quick wins for any website",
+            arguments:   [{ name: "url", description: "Website URL or business description", required: true }],
+          },
+          {
+            name:        "full-audit",
+            description: "Full AEO/GEO audit with P1/P2/P3 action roadmap",
+            arguments:   [{ name: "url", description: "Website URL or business description", required: true }],
+          },
+          {
+            name:        "generate-schema",
+            description: "Generate production-ready JSON-LD Schema.org markup for any page",
+            arguments:   [
+              { name: "url",  description: "Page URL or description", required: true },
+              { name: "type", description: "Page type hint e.g. pricing, blog, product, homepage", required: false },
+            ],
+          },
+          {
+            name:        "create-llms-txt",
+            description: "Generate a complete llms.txt file for AI crawler ingestion",
+            arguments:   [
+              { name: "url",      description: "Website URL", required: true },
+              { name: "business", description: "Brief business description e.g. 'B2B SaaS for salon booking, $49/mo'", required: false },
+            ],
+          },
+          {
+            name:        "progress-report",
+            description: "Score a website across the AEO Four Layers framework (SXO/AIO/GEO/AEO)",
+            arguments:   [{ name: "url", description: "Website URL or business description", required: true }],
+          },
+        ],
+      },
+    });
+  }
+
+  if (method === "prompts/get") {
+    const { name, arguments: args } = params as { name: string; arguments: Record<string, string> };
+    const url      = args?.url || "";
+    const business = args?.business || "";
+    const type     = args?.type || "";
+
+    const PROMPT_MESSAGES: Record<string, string> = {
+      "aeo-quick-wins":   `Give me 3 immediate AEO/GEO quick wins for ${url}. Focus on changes I can make this week to improve AI search visibility and get cited by ChatGPT, Perplexity, and Google AI Overviews.`,
+      "full-audit":       `Run a full AEO/GEO audit on ${url}. Score each of the four layers (on-page content, technical SEO, authority signals, AI-specific signals) and give me a prioritised P1/P2/P3 action roadmap.`,
+      "generate-schema":  `Generate complete, production-ready JSON-LD Schema.org markup for ${url}${type ? ` (${type} page)` : ""}. Include all relevant schema types and provide implementation instructions.`,
+      "create-llms-txt":  `Write a complete llms.txt file for ${url}${business ? ` — ${business}` : ""}. Structure it for ingestion by ChatGPT (GPTBot), Perplexity (PerplexityBot), and Claude (ClaudeBot). Include product summary, FAQ, key pages, and entity definitions.`,
+      "progress-report":  `Generate an AEO Four Layers progress report for ${url}. Score SXO, AIO, GEO, and AEO out of 100. Tell me what's working, what's not, and the next 3 highest-impact actions.`,
+    };
+
+    const text = PROMPT_MESSAGES[name];
+    if (!text) return res.json({ jsonrpc: "2.0", id, error: { code: -32601, message: `Unknown prompt: ${name}` } });
+
+    return res.json({
+      jsonrpc: "2.0", id,
+      result: {
+        description: `AEONOS — ${name}`,
+        messages: [{ role: "user", content: { type: "text", text } }],
+      },
+    });
   }
 
   if (method === "tools/list") {
