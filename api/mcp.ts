@@ -215,6 +215,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             description: "Score a website across the AEO Four Layers framework (SXO/AIO/GEO/AEO)",
             arguments:   [{ name: "url", description: "Website URL or business description", required: true }],
           },
+          {
+            name:        "optimise-content",
+            description: "Optimise a piece of content or page copy for AI engine citation before publishing",
+            arguments:   [
+              { name: "content",  description: "The content or page copy to optimise", required: true },
+              { name: "target",   description: "Target query or topic e.g. 'best salon booking software'", required: false },
+            ],
+          },
+          {
+            name:        "citation-check",
+            description: "Check whether a URL or piece of content is likely to be cited by ChatGPT, Perplexity, or Google AI Overviews — and why not if it isn't",
+            arguments:   [{ name: "url", description: "URL or content to check", required: true }],
+          },
         ],
       },
     });
@@ -226,12 +239,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const business = args?.business || "";
     const type     = args?.type || "";
 
+    const content  = args?.content || "";
+    const target   = args?.target || "";
+
     const PROMPT_MESSAGES: Record<string, string> = {
       "aeo-quick-wins":   `Give me 3 immediate AEO/GEO quick wins for ${url}. Focus on changes I can make this week to improve AI search visibility and get cited by ChatGPT, Perplexity, and Google AI Overviews.`,
       "full-audit":       `Run a full AEO/GEO audit on ${url}. Score each of the four layers (on-page content, technical SEO, authority signals, AI-specific signals) and give me a prioritised P1/P2/P3 action roadmap.`,
       "generate-schema":  `Generate complete, production-ready JSON-LD Schema.org markup for ${url}${type ? ` (${type} page)` : ""}. Include all relevant schema types and provide implementation instructions.`,
       "create-llms-txt":  `Write a complete llms.txt file for ${url}${business ? ` — ${business}` : ""}. Structure it for ingestion by ChatGPT (GPTBot), Perplexity (PerplexityBot), and Claude (ClaudeBot). Include product summary, FAQ, key pages, and entity definitions.`,
       "progress-report":  `Generate an AEO Four Layers progress report for ${url}. Score SXO, AIO, GEO, and AEO out of 100. Tell me what's working, what's not, and the next 3 highest-impact actions.`,
+      "optimise-content": `Optimise the following content for AI engine citation${target ? ` targeting the query: "${target}"` : ""}. Rewrite or annotate it so ChatGPT, Perplexity, Claude, and Google AI Overviews are more likely to cite it. Return the optimised version with a brief explanation of changes made.\n\nContent:\n${content}`,
+      "citation-check":   `Analyse ${url} and tell me: will ChatGPT, Perplexity, Claude, and Google AI Overviews cite this content? Give a yes/no verdict per engine, explain exactly why not where applicable, and list the top 3 changes that would most improve citation likelihood.`,
     };
 
     const text = PROMPT_MESSAGES[name];
