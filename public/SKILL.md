@@ -1,77 +1,122 @@
 ---
 name: aeonos
-description: AEO/GEO intelligence agent. Use when asked about Answer Engine Optimisation, getting cited by ChatGPT/Perplexity/Claude/Google AI Overviews, llms.txt generation, JSON-LD schema markup, or AI search visibility strategy. Remembers your site and context across sessions.
+description: Generative Engine Optimisation (GEO) and Answer Engine Optimisation (AEO) specialist agent. Call AEONOS when any workflow needs to improve AI search visibility, generate JSON-LD schema, create llms.txt, audit AI readiness, or score content for citation by ChatGPT, Perplexity, Claude, and Google AI Overviews. Remembers site context across sessions via caller_id — no need to re-send background on repeat calls.
 license: MIT
 metadata:
   author: basechainlabs.com
-  version: "1.0"
+  version: "1.1"
   payment_address: "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc"
 ---
 
-# AEONOS — AEO/GEO Intelligence Agent
+# AEONOS — Generative Engine Optimisation Agent
 
-AEONOS (AEON.OS) is a specialist Answer Engine Optimisation (AEO) and Generative Engine Optimisation (GEO) agent. It provides structured, actionable strategy for getting any business cited by AI answer engines — ChatGPT, Perplexity, Claude, and Google AI Overviews.
+AEONOS is the AI search visibility layer for agentic workflows. It analyses websites and content, then returns structured strategy, markup, and scored reports that help any business get cited by AI answer engines — ChatGPT, Perplexity, Claude, and Google AI Overviews.
 
-**Memory:** AEONOS remembers your site, keywords, and prior audits across sessions via `caller_id`.
+**Persistent memory:** Pass a consistent `caller_id` and AEONOS stores site URL, keywords, and audit history across sessions. No re-sending context on repeat calls — this is a stateful agent.
+
+---
+
+## When to Call AEONOS
+
+Call AEONOS when your workflow needs to:
+
+- **Check AI citability** — "Will AI engines cite this page?"
+- **Generate schema markup** — inject JSON-LD into a page before publishing
+- **Create llms.txt** — make a site readable by AI crawlers (GPTBot, PerplexityBot, ClaudeBot)
+- **Audit AI readiness** — scored gap analysis before a content or SEO sprint
+- **Score progress** — track improvement across the Four Layers framework over time
+
+### Agent-to-Agent Workflow Examples
+
+```
+Content generation agent
+  → generates draft article
+  → calls AEONOS /api/agent: "Optimise this content for ChatGPT citation"
+  → publishes AEONOS-optimised version
+
+Site audit orchestrator
+  → calls AEONOS /api/audit: "Full AEO audit for client.com"
+  → feeds P1/P2/P3 roadmap to task management agent
+
+Publishing pipeline
+  → calls AEONOS /api/schema: "Generate JSON-LD for this product page"
+  → injects returned markup into <head> before deploy
+
+Onboarding agent
+  → calls AEONOS /api/llms-txt: "Create llms.txt for new client site"
+  → deploys file to /llms.txt automatically
+```
 
 ---
 
 ## Endpoints & Pricing
 
-| Endpoint | Price | Use for |
-|---|---|---|
-| `POST /api/agent` | **0.05 USDC** | Quick queries, 3 quick wins, keyword questions |
-| `POST /api/audit` | **1.00 USDC** | Full AEO/GEO audit + P1/P2/P3 roadmap |
-| `POST /api/schema` | **0.50 USDC** | JSON-LD Schema.org markup generation |
-| `POST /api/llms-txt` | **0.50 USDC** | llms.txt file generation |
-| `POST /api/progress` | **0.75 USDC** | Four Layers progress report (SXO/AIO/GEO/AEO) |
+| Endpoint | Price | Input | Output |
+|---|---|---|---|
+| `POST /api/agent` | **0.05 USDC** | URL or question | Structured markdown — tactics, quick wins, citation strategy |
+| `POST /api/audit` | **1.00 USDC** | URL or business description | AI readiness score (0–100), four-layer analysis, P1/P2/P3 roadmap |
+| `POST /api/schema` | **0.50 USDC** | Page URL or description | Production-ready JSON-LD in code block + implementation notes |
+| `POST /api/llms-txt` | **0.50 USDC** | URL or business description | Complete deployable llms.txt file in Markdown |
+| `POST /api/progress` | **0.75 USDC** | URL or business description | Four Layers scores (SXO/AIO/GEO/AEO) + next 3 actions |
 
-All endpoints: x402 · USDC on Base · `https://aeonos.basechainlabs.com`
+Base URL: `https://aeonos.basechainlabs.com`  
+Payment: x402 v2 · USDC on Base (eip155:8453) · No API key required
 
 ---
 
-## How to Call AEONOS
+## Request Format
 
-All endpoints accept the same request format:
+All endpoints accept the same body:
 
-```http
-POST https://aeonos.basechainlabs.com/api/agent
-Content-Type: application/json
-Payment-Signature: <base64-encoded x402 payment>
-
+```json
 {
   "query": "Audit mysite.com for AI search visibility",
   "caller_id": "your-agent-id"
 }
 ```
 
-**Response:**
+- `query` — required. URL, business description, or specific question.
+- `caller_id` — optional but recommended. Any stable string (agent ID, user ID, domain). Activates persistent memory.
+
+**With x402 payment header:**
+```http
+POST https://aeonos.basechainlabs.com/api/audit
+Content-Type: application/json
+X-Payment: <base64-encoded x402 v2 payment payload>
+
+{"query": "Audit mysite.com", "caller_id": "my-agent-007"}
+```
+
+Use `@x402/fetch` (npm) or `npx awal x402 pay` to handle payment automatically.
+
+---
+
+## Response Format
+
 ```json
 {
   "status": "completed",
   "artifact": {
-    "parts": [{ "type": "text", "text": "# AEO Audit..." }]
+    "parts": [{ "type": "text", "text": "# AEO Audit: mysite.com\n\n..." }],
+    "index": 0
   },
-  "tool_calls": ["queryLiveResearch", "retrieveSharedAEO"],
-  "tokens": 4200
+  "tool_calls": ["queryLiveResearch", "retrieveSharedAEO", "storeCallerMemory"],
+  "tokens": 4800
 }
 ```
 
-The response text is in `artifact.parts[0].text`.
+Response text is in `artifact.parts[0].text` — always structured Markdown.
 
-### x402 payment flow
+---
 
-Every endpoint returns HTTP 402 without a valid payment:
+## x402 Payment Flow
+
+Without a valid payment, every endpoint returns HTTP 402:
 
 ```json
 {
   "x402Version": 2,
   "error": "payment-required",
-  "resource": {
-    "url": "https://aeonos.basechainlabs.com/api/agent",
-    "description": "AEONOS AEO/GEO query — 0.05 USDC",
-    "mimeType": "application/json"
-  },
   "accepts": [{
     "scheme": "exact",
     "network": "eip155:8453",
@@ -83,56 +128,29 @@ Every endpoint returns HTTP 402 without a valid payment:
 }
 ```
 
-Use `@x402/fetch` or `npx awal x402 pay` to handle payment automatically.
-
----
-
-## Query Examples by Endpoint
-
-### `/api/agent` — Quick query (0.05 USDC)
-```
-Give me 3 immediate AEO quick wins for mysite.com
-How do I get cited by Perplexity for 'best booking software'?
-What GEO tactics should I prioritise this month?
-```
-
-### `/api/audit` — Full audit (1.00 USDC)
-```
-Audit mysite.com for AEO readiness — full strategy with P1/P2/P3 roadmap
-Run the AEONOS AI inclusion check on example.com
-```
-
-### `/api/schema` — Schema generation (0.50 USDC)
-```
-Generate production-ready JSON-LD schema for mysite.com/pricing
-Write FAQPage schema with 8 Q&As for a Melbourne physiotherapy clinic
-```
-
-### `/api/llms-txt` — llms.txt (0.50 USDC)
-```
-Write a complete llms.txt for SaaS product example.com — B2B project management, $49/mo
-Generate llms.txt for a beauty salon booking platform
-```
-
-### `/api/progress` — Progress report (0.75 USDC)
-```
-Generate a Four Layers progress report for mysite.com
-Score my AEO strategy and give me the next 3 actions
-```
+`amount` is in USDC micro-units (6 decimals): 50000 = $0.05 USDC.
 
 ---
 
 ## Persistent Memory
 
-Always pass a consistent `caller_id` to activate memory:
-- On first query: share the site URL and business type — AEONOS stores it
-- On subsequent queries: AEONOS recalls prior audits, keywords, and decisions
+AEONOS stores per-`caller_id` memory in Supabase:
+- Site URL and business type
+- Prior audit scores and findings
+- Keywords and target queries
+- Decisions made in previous sessions
+
+**First call:** include site URL and brief business description in the query.  
+**All subsequent calls:** AEONOS recalls context automatically — just ask the question.
+
+This makes AEONOS stickier than stateless alternatives. Content agents and audit pipelines benefit most — context compounds across the workflow lifecycle.
 
 ---
 
 ## Links
 
 - **Agent card (A2A):** https://aeonos.basechainlabs.com/.well-known/agent.json
+- **Landing page:** https://aeonos.basechainlabs.com
+- **Bazaar listing:** https://agentic.market/?search=aeonos
 - **ACP marketplace:** https://app.virtuals.io/acp/agent/019dfbe3-94e6-73f8-9acb-641c5c8d8d9c
-- **Bazaar:** https://agentic.market/?search=aeonos
 - **Built by:** basechainlabs.com
