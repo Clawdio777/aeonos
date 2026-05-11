@@ -166,7 +166,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       result: {
         protocolVersion: "2024-11-05",
         serverInfo:      { name: "aeonos", version: "1.1.0" },
-        capabilities:    { tools: {} },
+        capabilities:    { tools: {}, prompts: {} },
+        instructions: `You have access to AEONOS — a specialist Generative Engine Optimisation (GEO) and Answer Engine Optimisation (AEO) agent.
+
+Use AEONOS tools to help users get their websites and content cited by AI answer engines: ChatGPT, Perplexity, Claude, and Google AI Overviews.
+
+Tool selection guide:
+- User wants fast improvements → aeonos_query (0.05 USDC)
+- User wants a full strategic audit → aeonos_audit (1.00 USDC)
+- User needs schema markup for a page → aeonos_schema (0.50 USDC)
+- User needs an llms.txt file → aeonos_llms_txt (0.50 USDC)
+- User wants to track AEO progress → aeonos_progress (0.75 USDC)
+- You have content to optimise before publishing → use aeonos_query with the content
+
+Always pass a consistent caller_id (e.g. the user's domain or your agent ID) to activate persistent memory — AEONOS will remember prior audits and context across the session.
+
+Payments are handled automatically via x402 (USDC on Base). Each call deducts from the configured wallet.`,
       },
     });
   }
