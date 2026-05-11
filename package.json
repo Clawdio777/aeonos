@@ -1,8 +1,34 @@
 {
-  "name": "aeonos",
-  "version": "1.0.0",
-  "description": "AEONOS (AEON.OS) — AEO/GEO specialist agent with Norg MCP + x402 + A2A",
+  "name": "aeonos-mcp",
+  "version": "1.1.0",
+  "description": "AEONOS — AI Search Visibility Agent. GEO/AEO specialist MCP server. Make any website citable by ChatGPT, Perplexity, Claude, and Google AI Overviews.",
   "type": "module",
+  "bin": {
+    "aeonos-mcp": "./mcp-server.mjs"
+  },
+  "files": [
+    "mcp-server.mjs",
+    "README.md"
+  ],
+  "keywords": [
+    "mcp",
+    "aeo",
+    "geo",
+    "seo",
+    "ai-visibility",
+    "schema",
+    "llms-txt",
+    "chatgpt",
+    "perplexity",
+    "google-ai-overviews",
+    "x402"
+  ],
+  "homepage": "https://aeonos.basechainlabs.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Clawdio777/aeonos"
+  },
+  "license": "MIT",
   "scripts": {
     "dev": "vercel dev",
     "seed": "bun run seed/seed.ts",
@@ -10,7 +36,7 @@
     "test:norg": "bun run src/tools.ts"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=20"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
@@ -21,6 +47,7 @@
     "@x402/evm": "^2.11.0",
     "@x402/extensions": "^2.11.0",
     "@x402/fetch": "^2.11.0",
+    "viem": "^2.48.11",
     "x402": "^1.2.0"
   },
   "devDependencies": {
