@@ -175,6 +175,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(204).end();
   }
 
+  if (method === "resources/list") {
+    return res.json({ jsonrpc: "2.0", id, result: { resources: [] } });
+  }
+
+  if (method === "prompts/list") {
+    return res.json({ jsonrpc: "2.0", id, result: { prompts: [] } });
+  }
+
   if (method === "tools/list") {
     return res.json({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
   }
