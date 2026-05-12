@@ -51,21 +51,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  // ── Agent card discovery ─────────────────────────────────────────────────────
-  // Only return agent card when explicitly requested via ?agent-card param.
-  // Plain GET returns 402 — required by x402 v2 spec for Bazaar discovery.
-  if (req.method === "GET" && req.query["agent-card"]) {
-    return res.json(buildAgentCard());
-  }
-
   // ── Async task polling ───────────────────────────────────────────────────────
   if (req.method === "GET" && req.query.task_id) {
     return handleTaskPoll(req, res);
   }
 
-  // ── Plain GET (no params) → 402 for x402 discovery compliance ───────────────
+  // ── A2A agent card discovery (8004scan, Cursor, Claude Desktop, etc.) ───────
+  // POST without payment still returns 402 with bazaar extension for x402 discovery.
   if (req.method === "GET") {
-    return send402(res, buildPaymentRequirements(req));
+    return res.json(buildAgentCard());
   }
 
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
