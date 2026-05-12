@@ -28,7 +28,9 @@ async function main() {
   // Step 1 — probe to confirm 402 with extensions.bazaar
   console.log("Step 1: Probing for 402...");
   const probe = await fetch(AGENT_URL, {
-    method: "GET",
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
   });
   console.log(`Probe status: ${probe.status}`);
   if (probe.status === 402) {
