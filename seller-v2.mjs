@@ -58,10 +58,13 @@ const OFFERING_PROMPTS = {
     `Generate a structured AEO progress report for: ${q}. Score each of the Four Layers (Technical/SXO, Content/AIO, Authority/GEO, Citation/AEO) from 0–100 with specific reasons. Identify the top 3 things working, the top 3 things broken, and give exactly 3 priority actions ranked by impact. Use the progress report format — not a strategy overview.`,
 };
 
-// Sweep: auto-transfer USDC earnings to personal Base wallet after each job
-const SWEEP_DEST      = "0x282d873b3737144b45c507320c12f22edfd51fe3";
-const SWEEP_THRESHOLD = 10.00; // USDC — only sweep if balance ≥ this
+// Sweep: split USDC earnings — top up Pemba buyer wallet first, rest to personal wallet
+const SWEEP_DEST      = "0x282d873b3737144b45c507320c12f22edfd51fe3"; // personal/business wallet
+const PEMBA_WALLET    = "0x1E45B323B94Bfe39eac03E27431A6866193AcC1B"; // Pemba buyer wallet (pays for AEONOS calls)
+const PEMBA_TARGET    = 5.00;  // USDC to keep in Pemba wallet (~5 wks of audits: 4×$0.75 + 1×$1.00)
+const SWEEP_THRESHOLD = 10.00; // USDC — only sweep if AEONOS balance ≥ this
 const USDC_CONTRACT   = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"; // USDC on Base
+const BASE_RPC        = "https://mainnet.base.org";
 
 // Log directory — Railway uses /data/logs, Mac uses ~/Library/Logs/aeonos-seller
 const LOG_DIR = process.env.LOG_DIR
@@ -267,6 +270,38 @@ async function fetchRequirementFallback(jobId, chainId) {
 
 // ── Sweeper ────────────────────────────────────────────────────────────────────
 
+// Read USDC balance of any Base address via public RPC (no auth needed)
+async function getUSDCBalance(address) {
+  try {
+    const data = "0x70a08231" + address.slice(2).toLowerCase().padStart(64, "0");
+    const res = await fetch(BASE_RPC, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: USDC_CONTRACT, data }, "latest"] }),
+    });
+    const json = await res.json();
+    if (!json.result || json.result === "0x") return 0;
+    return parseInt(json.result, 16) / 1_000_000; // USDC = 6 decimals
+  } catch {
+    return 0;
+  }
+}
+
+// Send USDC from the AEONOS ACP wallet to any address
+function sendUSDC(toAddress, amount) {
+  const units    = BigInt(Math.floor(amount * 1_000_000));
+  const dest     = toAddress.slice(2).toLowerCase().padStart(64, "0");
+  const amt      = units.toString(16).padStart(64, "0");
+  const calldata = `0xa9059cbb${dest}${amt}`;
+  const txOut = execFileSync(ACP_BIN, [
+    "wallet", "send-transaction",
+    "--chain-id", String(CHAIN_ID),
+    "--to",   USDC_CONTRACT,
+    "--data", calldata,
+  ], { encoding: "utf8", timeout: 60_000, env: acpEnv() });
+  return txOut.trim().slice(0, 120);
+}
+
 async function sweepIfNeeded() {
   try {
     const balOut = execFileSync(ACP_BIN, [
@@ -283,22 +318,30 @@ async function sweepIfNeeded() {
       return;
     }
 
-    log(`[Sweep] ${balance} USDC ≥ ${SWEEP_THRESHOLD} — sweeping to ${SWEEP_DEST}`);
+    log(`[Sweep] ${balance} USDC ≥ ${SWEEP_THRESHOLD} — calculating split`);
 
-    // Encode ERC-20 transfer(address,uint256) calldata
-    const units   = BigInt(Math.floor(balance * 1_000_000)); // USDC = 6 decimals
-    const dest    = SWEEP_DEST.slice(2).toLowerCase().padStart(64, "0");
-    const amt     = units.toString(16).padStart(64, "0");
-    const calldata = `0xa9059cbb${dest}${amt}`;
+    // Check how much Pemba wallet currently has, top it up to PEMBA_TARGET
+    const pembaBalance = await getUSDCBalance(PEMBA_WALLET);
+    const pembaTopup   = Math.max(0, parseFloat((PEMBA_TARGET - pembaBalance).toFixed(6)));
+    const toPersonal   = parseFloat(Math.max(0, balance - pembaTopup).toFixed(6));
 
-    const txOut = execFileSync(ACP_BIN, [
-      "wallet", "send-transaction",
-      "--chain-id", String(CHAIN_ID),
-      "--to",   USDC_CONTRACT,
-      "--data", calldata,
-    ], { encoding: "utf8", timeout: 60_000, env: acpEnv() });
+    log(`[Sweep] Pemba wallet has ${pembaBalance} USDC — topup ${pembaTopup}, personal ${toPersonal}`);
 
-    log(`[Sweep] Done. TX: ${txOut.trim().slice(0, 120)}`);
+    // 1. Top up Pemba wallet if it needs it
+    if (pembaTopup >= 0.01) {
+      const tx1 = sendUSDC(PEMBA_WALLET, pembaTopup);
+      log(`[Sweep] Pemba top-up ${pembaTopup} USDC. TX: ${tx1}`);
+    } else {
+      log(`[Sweep] Pemba wallet already funded (${pembaBalance} USDC) — skipping top-up`);
+    }
+
+    // 2. Send remainder to personal/business wallet
+    if (toPersonal >= 0.01) {
+      const tx2 = sendUSDC(SWEEP_DEST, toPersonal);
+      log(`[Sweep] Personal sweep ${toPersonal} USDC. TX: ${tx2}`);
+    } else {
+      log(`[Sweep] Nothing left for personal wallet after Pemba top-up`);
+    }
   } catch (e) {
     log("[Sweep] ERROR:", e.message.slice(0, 200));
   }
