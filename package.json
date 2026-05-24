@@ -1,6 +1,7 @@
 {
   "name": "aeonos-mcp",
-  "version": "1.1.0",
+  "version": "1.1.1",
+  "mcpName": "io.github.Clawdio777/aeonos",
   "description": "AEONOS — AI Search Visibility Agent. GEO/AEO specialist MCP server. Make any website citable by ChatGPT, Perplexity, Claude, and Google AI Overviews.",
   "type": "module",
   "bin": {
@@ -47,6 +48,8 @@
     "@x402/evm": "^2.11.0",
     "@x402/extensions": "^2.11.0",
     "@x402/fetch": "^2.11.0",
+    "cheerio": "^1.2.0",
+    "dotenv": "^17.4.2",
     "viem": "^2.48.11",
     "x402": "^1.2.0"
   },
