@@ -327,93 +327,106 @@ async function runStoreCallerMemory(input: Record<string, any>): Promise<string>
 
 // ── Live Citation Checker ──────────────────────────────────────────────────────
 
+type CitRow = { query: string; cited: boolean; competitors: string[]; sources: string[] };
+
+function extractCitationResult(domain: string, answer: string, citations: string[]): CitRow & { query: string } {
+  const domainClean = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const rx = new RegExp(domainClean.replace(".", "\\."), "i");
+  const cited = rx.test(answer) || citations.some((c) => rx.test(c));
+  const competitors = citations
+    .filter((c) => !rx.test(c))
+    .map((c) => { try { return new URL(c).hostname; } catch { return c; } })
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .slice(0, 4);
+  return { query: "", cited, competitors, sources: cited ? citations.filter((c) => rx.test(c)) : [] };
+}
+
+async function queryPplxRaw(question: string, key: string): Promise<{ answer: string; citations: string[] }> {
+  try {
+    const res = await fetch("https://api.perplexity.ai/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "sonar", messages: [{ role: "user", content: question }], max_tokens: 500 }),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) return { answer: "", citations: [] };
+    const data = await res.json() as any;
+    const answer: string = data.choices?.[0]?.message?.content ?? "";
+    const citations: string[] = (data.citations ?? []).map((c: any) => typeof c === "string" ? c : (c.url ?? "")).filter(Boolean);
+    return { answer, citations };
+  } catch { return { answer: "", citations: [] }; }
+}
+
+async function queryGPTRaw(question: string, key: string): Promise<{ answer: string; citations: string[] }> {
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "gpt-4o-mini-search-preview", messages: [{ role: "user", content: question }], max_tokens: 500 }),
+      signal: AbortSignal.timeout(25000),
+    });
+    if (!res.ok) return { answer: "", citations: [] };
+    const data = await res.json() as any;
+    const message = data.choices?.[0]?.message;
+    const answer: string = typeof message?.content === "string" ? message.content : "";
+    const citations: string[] = (message?.annotations ?? [])
+      .filter((a: any) => a.type === "url_citation")
+      .map((a: any) => a.url_citation?.url ?? "")
+      .filter(Boolean);
+    return { answer, citations };
+  } catch { return { answer: "", citations: [] }; }
+}
+
 async function runCheckLiveCitations(input: Record<string, any>): Promise<string> {
   const { domain, queries } = input as { domain: string; queries: string[] };
-  const key = process.env.PPLX_API_KEY;
+  const pplxKey = process.env.PPLX_API_KEY;
+  const openaiKey = process.env.OPENAI_API_KEY;
 
-  if (!key) {
-    return "PPLX_API_KEY not configured — citation checking unavailable. Recommend adding Perplexity API access.";
+  if (!pplxKey && !openaiKey) {
+    return "No citation API keys configured (PPLX_API_KEY or OPENAI_API_KEY required).";
   }
-
   if (!queries?.length) return "queries array is required";
 
-  const results: Array<{
-    query: string;
-    cited: boolean;
-    competitors: string[];
-    sources: string[];
-  }> = [];
+  const pplxResults: CitRow[] = [];
+  const gptResults: CitRow[] = [];
 
-  for (const query of queries.slice(0, 6)) {
-    try {
-      const res = await fetch("https://api.perplexity.ai/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "sonar",
-          messages: [{ role: "user", content: query }],
-          max_tokens: 500,
-        }),
-        signal: AbortSignal.timeout(20000),
-      });
+  await Promise.all(queries.slice(0, 6).map(async (query) => {
+    const [pplx, gpt] = await Promise.allSettled([
+      pplxKey ? queryPplxRaw(query, pplxKey) : Promise.resolve({ answer: "", citations: [] }),
+      openaiKey ? queryGPTRaw(query, openaiKey) : Promise.resolve({ answer: "", citations: [] }),
+    ]);
 
-      if (!res.ok) {
-        results.push({ query, cited: false, competitors: [], sources: [] });
-        continue;
-      }
-
-      const data = await res.json() as {
-        choices?: Array<{ message?: { content?: string } }>;
-        citations?: Array<string | { url?: string }>;
-      };
-
-      const answer = data.choices?.[0]?.message?.content ?? "";
-      const citations: string[] = (data.citations ?? []).map((c) =>
-        typeof c === "string" ? c : (c.url ?? "")
-      ).filter(Boolean);
-
-      const domainClean = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
-      const domainRegex = new RegExp(domainClean.replace(".", "\\."), "i");
-
-      const cited = domainRegex.test(answer) || citations.some((c) => domainRegex.test(c));
-      const competitors = citations
-        .filter((c) => !domainRegex.test(c))
-        .map((c) => { try { return new URL(c).hostname; } catch { return c; } })
-        .filter((v, i, a) => a.indexOf(v) === i)
-        .slice(0, 4);
-
-      results.push({
-        query,
-        cited,
-        competitors,
-        sources: cited ? citations.filter((c) => domainRegex.test(c)) : [],
-      });
-    } catch {
-      results.push({ query, cited: false, competitors: [], sources: [] });
+    if (pplxKey && pplx.status === "fulfilled") {
+      const r = extractCitationResult(domain, pplx.value.answer, pplx.value.citations);
+      pplxResults.push({ ...r, query });
     }
-  }
+    if (openaiKey && gpt.status === "fulfilled") {
+      const r = extractCitationResult(domain, gpt.value.answer, gpt.value.citations);
+      gptResults.push({ ...r, query });
+    }
+  }));
 
-  const citedCount = results.filter((r) => r.cited).length;
-  const score = `${citedCount}/${results.length}`;
-  const allCompetitors = [...new Set(results.flatMap((r) => r.competitors))].slice(0, 8);
+  const pplxCited = pplxResults.filter((r) => r.cited).length;
+  const gptCited = gptResults.filter((r) => r.cited).length;
+  const allCompetitors = [...new Set([...pplxResults, ...gptResults].flatMap((r) => r.competitors))].slice(0, 8);
 
-  const lines = [
+  const lines: string[] = [
     `## Live Citation Check — ${domain}`,
-    `Citation score: ${score} queries where ${domain} was found in Perplexity`,
+    pplxKey ? `Perplexity: ${pplxCited}/${pplxResults.length} queries cited` : "",
+    openaiKey ? `ChatGPT: ${gptCited}/${gptResults.length} queries cited` : "",
     "",
-    ...results.map((r) =>
-      `${r.cited ? "✅" : "❌"} "${r.query}"\n   ${r.cited ? `Cited in: ${r.sources.join(", ")}` : `Not cited. Competitors appearing: ${r.competitors.join(", ") || "none identified"}`}`
+    ...pplxResults.map((r) =>
+      `${r.cited ? "✅" : "❌"} [Perplexity] "${r.query}"\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Competitors: ${r.competitors.join(", ") || "none identified"}`}`
+    ),
+    ...gptResults.map((r) =>
+      `${r.cited ? "✅" : "❌"} [ChatGPT] "${r.query}"\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Competitors: ${r.competitors.join(", ") || "none identified"}`}`
     ),
     "",
-    allCompetitors.length
-      ? `Competitors appearing across queries: ${allCompetitors.join(", ")}`
-      : "",
+    allCompetitors.length ? `Competitor domains appearing instead: ${allCompetitors.join(", ")}` : "",
     "",
-    citedCount === 0
-      ? `⚠️ ${domain} has zero AI citations for these queries. This is the most critical finding in this audit.`
-      : citedCount < results.length / 2
-      ? `${domain} is cited in ${score} queries — significant visibility gaps remain.`
-      : `${domain} has strong citation presence (${score}).`,
+    pplxCited === 0 && gptCited === 0
+      ? `⚠️ ${domain} has ZERO citations across all AI engines checked. This is the top priority finding.`
+      : `Overall citation presence: Perplexity ${pplxCited}/${pplxResults.length}, ChatGPT ${gptCited}/${gptResults.length}.`,
   ].filter((l) => l !== undefined);
 
   return lines.join("\n");
