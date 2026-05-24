@@ -377,10 +377,37 @@ async function queryGPTRaw(question: string, key: string): Promise<{ answer: str
   } catch { return { answer: "", citations: [] }; }
 }
 
+async function queryGoogleAIOverview(query: string): Promise<{ text: string; sources: string[] }> {
+  const login = process.env.DATAFORSEO_LOGIN;
+  const password = process.env.DATAFORSEO_PASSWORD;
+  if (!login || !password) return { text: "", sources: [] };
+  try {
+    const auth = Buffer.from(`${login}:${password}`).toString("base64");
+    const res = await fetch("https://api.dataforseo.com/v3/serp/google/organic/live/regular", {
+      method: "POST",
+      headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
+      body: JSON.stringify([{ keyword: query, location_code: 2840, language_code: "en", device: "desktop", depth: 10 }]),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) return { text: "", sources: [] };
+    const data = await res.json() as any;
+    const items: any[] = data.tasks?.[0]?.result?.[0]?.items ?? [];
+    const aio = items.find((item: any) => item.type === "ai_overview");
+    if (!aio) return { text: "", sources: [] };
+    const text: string = aio.text ?? aio.description ?? "";
+    const sources: string[] = [
+      ...(aio.items ?? []).map((i: any) => i.url ?? i.source?.url ?? ""),
+      ...(aio.references ?? []).map((i: any) => i.url ?? ""),
+    ].filter(Boolean);
+    return { text, sources };
+  } catch { return { text: "", sources: [] }; }
+}
+
 async function runCheckLiveCitations(input: Record<string, any>): Promise<string> {
   const { domain, queries } = input as { domain: string; queries: string[] };
   const pplxKey = process.env.PPLX_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
+  const hasDFS = !!(process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD);
 
   if (!pplxKey && !openaiKey) {
     return "No citation API keys configured (PPLX_API_KEY or OPENAI_API_KEY required).";
@@ -389,11 +416,13 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
 
   const pplxResults: CitRow[] = [];
   const gptResults: CitRow[] = [];
+  const aioResults: CitRow[] = [];
 
   await Promise.all(queries.slice(0, 6).map(async (query) => {
-    const [pplx, gpt] = await Promise.allSettled([
+    const [pplx, gpt, aio] = await Promise.allSettled([
       pplxKey ? queryPplxRaw(query, pplxKey) : Promise.resolve({ answer: "", citations: [] }),
       openaiKey ? queryGPTRaw(query, openaiKey) : Promise.resolve({ answer: "", citations: [] }),
+      hasDFS ? queryGoogleAIOverview(query) : Promise.resolve({ text: "", sources: [] }),
     ]);
 
     if (pplxKey && pplx.status === "fulfilled") {
@@ -404,16 +433,22 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
       const r = extractCitationResult(domain, gpt.value.answer, gpt.value.citations);
       gptResults.push({ ...r, query });
     }
+    if (hasDFS && aio.status === "fulfilled" && (aio.value.text || aio.value.sources.length)) {
+      const r = extractCitationResult(domain, aio.value.text, aio.value.sources);
+      aioResults.push({ ...r, query });
+    }
   }));
 
   const pplxCited = pplxResults.filter((r) => r.cited).length;
   const gptCited = gptResults.filter((r) => r.cited).length;
-  const allCompetitors = [...new Set([...pplxResults, ...gptResults].flatMap((r) => r.competitors))].slice(0, 8);
+  const aioCited = aioResults.filter((r) => r.cited).length;
+  const allCompetitors = [...new Set([...pplxResults, ...gptResults, ...aioResults].flatMap((r) => r.competitors))].slice(0, 8);
 
   const lines: string[] = [
     `## Live Citation Check — ${domain}`,
     pplxKey ? `Perplexity: ${pplxCited}/${pplxResults.length} queries cited` : "",
     openaiKey ? `ChatGPT: ${gptCited}/${gptResults.length} queries cited` : "",
+    hasDFS && aioResults.length ? `Google AI Overviews: ${aioCited}/${aioResults.length} queries cited` : "",
     "",
     ...pplxResults.map((r) =>
       `${r.cited ? "✅" : "❌"} [Perplexity] "${r.query}"\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Competitors: ${r.competitors.join(", ") || "none identified"}`}`
@@ -421,12 +456,15 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
     ...gptResults.map((r) =>
       `${r.cited ? "✅" : "❌"} [ChatGPT] "${r.query}"\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Competitors: ${r.competitors.join(", ") || "none identified"}`}`
     ),
+    ...aioResults.map((r) =>
+      `${r.cited ? "✅" : "❌"} [Google AI Overview] "${r.query}"\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Competitors: ${r.competitors.join(", ") || "none identified"}`}`
+    ),
     "",
     allCompetitors.length ? `Competitor domains appearing instead: ${allCompetitors.join(", ")}` : "",
     "",
-    pplxCited === 0 && gptCited === 0
-      ? `⚠️ ${domain} has ZERO citations across all AI engines checked. This is the top priority finding.`
-      : `Overall citation presence: Perplexity ${pplxCited}/${pplxResults.length}, ChatGPT ${gptCited}/${gptResults.length}.`,
+    pplxCited === 0 && gptCited === 0 && aioCited === 0
+      ? `⚠️ ${domain} has ZERO citations across all three AI engines. This is the #1 priority finding in this audit.`
+      : `Citation presence: Perplexity ${pplxCited}/${pplxResults.length} | ChatGPT ${gptCited}/${gptResults.length} | Google AI Overviews ${aioCited}/${aioResults.length || "n/a"}.`,
   ].filter((l) => l !== undefined);
 
   return lines.join("\n");
