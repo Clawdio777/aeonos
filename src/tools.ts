@@ -119,6 +119,33 @@ export const tools: Anthropic.Tool[] = [
   },
 
   {
+    name: "checkLiveCitations",
+    description:
+      "Check whether a domain is actually being cited by Perplexity in response to AI search queries. " +
+      "This is REAL citation data — not structural inference. Call this during every audit to ground " +
+      "your recommendations in actual AI search behaviour. " +
+      "Pass the domain being audited and 4-6 queries that represent how their target customers " +
+      "search in AI engines (e.g. 'best AI SEO tool for small business', 'how to rank in ChatGPT'). " +
+      "Returns: cited (bool), per-query results with sources found, citation score, and competitor URLs " +
+      "that ARE being cited instead. Use this data in your audit output.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        domain: {
+          type: "string",
+          description: "The domain to check citations for (e.g. 'pemba.ai', 'example.com')",
+        },
+        queries: {
+          type: "array",
+          items: { type: "string" },
+          description: "4-6 AI search queries to check. Frame as questions a real customer would ask in ChatGPT or Perplexity.",
+        },
+      },
+      required: ["domain", "queries"],
+    },
+  },
+
+  {
     name: "storeCallerMemory",
     description:
       "Save or update context for this caller. Call this when you learn: their site URL, " +
@@ -159,6 +186,8 @@ export async function executeTool(
       return await runRetrieveCallerMemory(input);
     case "storeCallerMemory":
       return await runStoreCallerMemory(input);
+    case "checkLiveCitations":
+      return await runCheckLiveCitations(input);
     default:
       return `Unknown tool: ${name}`;
   }
@@ -294,4 +323,98 @@ async function runStoreCallerMemory(input: Record<string, any>): Promise<string>
 
   if (error) return `storeCallerMemory error: ${error.message}`;
   return `Memory saved for caller ${caller_id}`;
+}
+
+// ── Live Citation Checker ──────────────────────────────────────────────────────
+
+async function runCheckLiveCitations(input: Record<string, any>): Promise<string> {
+  const { domain, queries } = input as { domain: string; queries: string[] };
+  const key = process.env.PPLX_API_KEY;
+
+  if (!key) {
+    return "PPLX_API_KEY not configured — citation checking unavailable. Recommend adding Perplexity API access.";
+  }
+
+  if (!queries?.length) return "queries array is required";
+
+  const results: Array<{
+    query: string;
+    cited: boolean;
+    competitors: string[];
+    sources: string[];
+  }> = [];
+
+  for (const query of queries.slice(0, 6)) {
+    try {
+      const res = await fetch("https://api.perplexity.ai/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "sonar",
+          messages: [{ role: "user", content: query }],
+          max_tokens: 500,
+        }),
+        signal: AbortSignal.timeout(20000),
+      });
+
+      if (!res.ok) {
+        results.push({ query, cited: false, competitors: [], sources: [] });
+        continue;
+      }
+
+      const data = await res.json() as {
+        choices?: Array<{ message?: { content?: string } }>;
+        citations?: Array<string | { url?: string }>;
+      };
+
+      const answer = data.choices?.[0]?.message?.content ?? "";
+      const citations: string[] = (data.citations ?? []).map((c) =>
+        typeof c === "string" ? c : (c.url ?? "")
+      ).filter(Boolean);
+
+      const domainClean = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
+      const domainRegex = new RegExp(domainClean.replace(".", "\\."), "i");
+
+      const cited = domainRegex.test(answer) || citations.some((c) => domainRegex.test(c));
+      const competitors = citations
+        .filter((c) => !domainRegex.test(c))
+        .map((c) => { try { return new URL(c).hostname; } catch { return c; } })
+        .filter((v, i, a) => a.indexOf(v) === i)
+        .slice(0, 4);
+
+      results.push({
+        query,
+        cited,
+        competitors,
+        sources: cited ? citations.filter((c) => domainRegex.test(c)) : [],
+      });
+    } catch {
+      results.push({ query, cited: false, competitors: [], sources: [] });
+    }
+  }
+
+  const citedCount = results.filter((r) => r.cited).length;
+  const score = `${citedCount}/${results.length}`;
+  const allCompetitors = [...new Set(results.flatMap((r) => r.competitors))].slice(0, 8);
+
+  const lines = [
+    `## Live Citation Check — ${domain}`,
+    `Citation score: ${score} queries where ${domain} was found in Perplexity`,
+    "",
+    ...results.map((r) =>
+      `${r.cited ? "✅" : "❌"} "${r.query}"\n   ${r.cited ? `Cited in: ${r.sources.join(", ")}` : `Not cited. Competitors appearing: ${r.competitors.join(", ") || "none identified"}`}`
+    ),
+    "",
+    allCompetitors.length
+      ? `Competitors appearing across queries: ${allCompetitors.join(", ")}`
+      : "",
+    "",
+    citedCount === 0
+      ? `⚠️ ${domain} has zero AI citations for these queries. This is the most critical finding in this audit.`
+      : citedCount < results.length / 2
+      ? `${domain} is cited in ${score} queries — significant visibility gaps remain.`
+      : `${domain} has strong citation presence (${score}).`,
+  ].filter((l) => l !== undefined);
+
+  return lines.join("\n");
 }
