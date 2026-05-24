@@ -14,6 +14,39 @@ import { tools, executeTool } from "./tools.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
+// ── Live knowledge injection ────────────────────────────────────────────────
+// Fetches the latest AEO/GEO/SEO intelligence from Sailor's knowledge base
+// (fed by Carly via Telegram + weekly auto-research). Cached for 1 hour.
+
+let _knowledgeCache: { data: string; expires: number } | null = null
+
+async function fetchSailorKnowledge(): Promise<string> {
+  const now = Date.now()
+  if (_knowledgeCache && _knowledgeCache.expires > now) return _knowledgeCache.data
+
+  try {
+    const baseUrl = process.env.PEMBA_KNOWLEDGE_URL ?? 'https://pemba.ai'
+    const res = await fetch(`${baseUrl}/api/aeonos/knowledge`, {
+      headers: { Authorization: `Bearer ${process.env.PEMBA_API_KEY}` },
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!res.ok) return ''
+    const json = (await res.json()) as { knowledge?: Array<{ category: string; title: string; insight: string; date: string }> }
+    const entries = json.knowledge ?? []
+    if (entries.length === 0) return ''
+
+    const formatted = entries
+      .map(e => `[${e.category.toUpperCase().replace('_', ' ')}] ${e.title}\n${e.insight}`)
+      .join('\n\n')
+
+    const data = `\n\n## Current AEO/GEO Intelligence (live — ${new Date().toLocaleDateString('en-AU')})\n\n${formatted}\n\n`
+    _knowledgeCache = { data, expires: now + 60 * 60 * 1000 }
+    return data
+  } catch {
+    return ''
+  }
+}
+
 const SYSTEM_PROMPT = `You are AEONOS (AEON.OS), a specialist AEO (Answer Engine Optimisation) and GEO (Generative Engine Optimisation) agent.
 
 Your job: help any agent or business understand and improve their visibility in AI answer engines — ChatGPT, Perplexity, Claude, and Google AI Overviews.
@@ -51,6 +84,9 @@ export interface AgentResponse {
 }
 
 export async function runAgent(input: AgentQuery): Promise<AgentResponse> {
+  const [dynamicKnowledge] = await Promise.all([fetchSailorKnowledge()])
+  const systemPrompt = SYSTEM_PROMPT + dynamicKnowledge
+
   const messages: Anthropic.MessageParam[] = [
     {
       role: "user",
@@ -72,7 +108,7 @@ export async function runAgent(input: AgentQuery): Promise<AgentResponse> {
       model: "claude-sonnet-4-6",
       // Allow more output tokens on the synthesis pass so a full audit fits.
       max_tokens: forceSynthesis ? 16000 : 8192,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       // On the forced-synthesis pass, omit tools entirely so the model must produce text.
       ...(forceSynthesis ? {} : { tools }),
       messages,
