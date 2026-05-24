@@ -10,6 +10,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
+import { runInspectSiteStructure } from "./inspect.js";
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 
@@ -146,6 +147,36 @@ export const tools: Anthropic.Tool[] = [
   },
 
   {
+    name: "inspectSiteStructure",
+    description:
+      "Deep-crawl a URL and run 10 AI visibility functions on it. Use this on EVERY audit after checkLiveCitations. " +
+      "Returns: schema types present + malformed, schema gap analysis with P1/P2/P3 priorities, " +
+      "ready-to-paste JSON-LD templates for every missing schema, E-E-A-T score, entity disambiguation score, " +
+      "content freshness, PAA readiness, conversational query score, llms.txt status, and " +
+      "delta vs the caller's previous audit (if they've audited before). " +
+      "Results are saved to caller_memory automatically — returning callers get a 'here's what changed' comparison. " +
+      "This is the tool that explains WHY a site isn't cited and gives the exact fix.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        url: {
+          type: "string",
+          description: "Full URL to inspect (e.g. 'https://pemba.ai' or 'https://pemba.ai/pricing')",
+        },
+        caller_id: {
+          type: "string",
+          description: "The caller's stable identifier — used to load + save audit history",
+        },
+        target_query: {
+          type: "string",
+          description: "The AI search query this page should be answering (e.g. 'best AI SEO tool for solopreneurs'). Used for conversational optimisation scoring.",
+        },
+      },
+      required: ["url", "caller_id"],
+    },
+  },
+
+  {
     name: "storeCallerMemory",
     description:
       "Save or update context for this caller. Call this when you learn: their site URL, " +
@@ -188,6 +219,8 @@ export async function executeTool(
       return await runStoreCallerMemory(input);
     case "checkLiveCitations":
       return await runCheckLiveCitations(input);
+    case "inspectSiteStructure":
+      return await runInspectSiteStructure(input);
     default:
       return `Unknown tool: ${name}`;
   }
