@@ -128,8 +128,9 @@ export const tools: Anthropic.Tool[] = [
       "your recommendations in actual AI search behaviour. " +
       "Pass the domain being audited and 4-6 queries that represent how their target customers " +
       "search in AI engines (e.g. 'best AI SEO tool for small business', 'how to rank in ChatGPT'). " +
-      "Returns: per-engine citation score (0-100), per-query results with sources found, and competitor URLs " +
-      "that ARE being cited instead. All scores are 0-100. Use this data in your audit output.",
+      "Pass caller_id when available — results are persisted to citation_history for trend analysis and delta comparison. " +
+      "Returns: per-engine citation score (0-100), per-query results with sources found, competitor URLs " +
+      "that ARE being cited instead, and delta vs previous run when caller_id is provided.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -141,6 +142,10 @@ export const tools: Anthropic.Tool[] = [
           type: "array",
           items: { type: "string" },
           description: "4-6 AI search queries to check. Frame as questions a real customer would ask in ChatGPT or Perplexity.",
+        },
+        caller_id: {
+          type: "string",
+          description: "Optional. When provided, results are saved to citation_history for trend tracking and delta comparison vs previous runs.",
         },
       },
       required: ["domain", "queries"],
@@ -463,7 +468,7 @@ async function queryGoogleAIOverview(query: string): Promise<{ text: string; sou
 }
 
 async function runCheckLiveCitations(input: Record<string, any>): Promise<string> {
-  const { domain, queries } = input as { domain: string; queries: string[] };
+  const { domain, queries, caller_id } = input as { domain: string; queries: string[]; caller_id?: string };
   const pplxKey = process.env.PPLX_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
   const hasDFS = !!(process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD);
@@ -473,8 +478,8 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
   }
   if (!queries?.length) return "queries array is required";
 
-  const pplxResults: CitRow[] = [];
-  const gptResults: CitRow[] = [];
+  const pplxResults: (CitRow & { answer: string })[] = [];
+  const gptResults: (CitRow & { answer: string })[] = [];
   const aioResults: CitRow[] = [];
   const bingResults: CitRow[] = [];
 
@@ -488,11 +493,11 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
 
     if (pplxKey && pplx.status === "fulfilled") {
       const r = extractCitationResult(domain, pplx.value.answer, pplx.value.citations);
-      pplxResults.push({ ...r, query });
+      pplxResults.push({ ...r, query, answer: pplx.value.answer });
     }
     if (openaiKey && gpt.status === "fulfilled") {
       const r = extractCitationResult(domain, gpt.value.answer, gpt.value.citations);
-      gptResults.push({ ...r, query });
+      gptResults.push({ ...r, query, answer: gpt.value.answer });
     }
     if (hasDFS && aio.status === "fulfilled" && (aio.value.text || aio.value.sources.length)) {
       const r = extractCitationResult(domain, aio.value.text, aio.value.sources);
@@ -510,6 +515,58 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
   const bingCited = bingResults.filter((r) => r.cited).length;
   const allCompetitors = [...new Set([...pplxResults, ...gptResults, ...aioResults, ...bingResults].flatMap((r) => r.competitors))].slice(0, 8);
   const zeroCitations = pplxCited === 0 && gptCited === 0 && aioCited === 0 && bingCited === 0;
+  const timestamp = new Date().toISOString();
+
+  // Persist to citation_history when caller_id is provided
+  let deltaSection = "";
+  if (caller_id) {
+    try {
+      const { data: existing } = await db
+        .from("caller_memory")
+        .select("citation_history")
+        .eq("caller_id", caller_id)
+        .single();
+
+      const prevHistory: any[] = (existing as any)?.citation_history ?? [];
+      const snapshot = {
+        timestamp,
+        domain,
+        perplexity: { cited: pplxCited, total: pplxResults.length, results: pplxResults.map(({ query, cited, competitors, sources }) => ({ query, cited, competitors, sources })) },
+        chatgpt: { cited: gptCited, total: gptResults.length, results: gptResults.map(({ query, cited, competitors, sources }) => ({ query, cited, competitors, sources })) },
+        googleAIO: { cited: aioCited, total: aioResults.length },
+        bing: { cited: bingCited, total: bingResults.length },
+        // Store raw answer text for future sentiment analysis
+        answers: {
+          perplexity: pplxResults.map(({ query, answer }) => ({ query, answer: answer.slice(0, 1000) })),
+          chatgpt: gptResults.map(({ query, answer }) => ({ query, answer: answer.slice(0, 1000) })),
+        },
+        competitors: allCompetitors,
+      };
+
+      await db.from("caller_memory").upsert(
+        {
+          caller_id,
+          citation_history: [...prevHistory, snapshot].slice(-20),
+          updated_at: timestamp,
+        },
+        { onConflict: "caller_id" }
+      );
+
+      // Build delta section comparing vs most recent previous run for same domain
+      const prevRun = [...prevHistory].reverse().find((h) => h.domain === domain);
+      if (prevRun) {
+        const pplxDelta = pplxCited - (prevRun.perplexity?.cited ?? 0);
+        const gptDelta = gptCited - (prevRun.chatgpt?.cited ?? 0);
+        const prevDate = new Date(prevRun.timestamp).toLocaleDateString("en-AU");
+        const fmt = (n: number) => n > 0 ? `+${n}` : `${n}`;
+        deltaSection = `\n\n## DELTA VS PREVIOUS RUN (${prevDate})\n` +
+          `Perplexity: ${fmt(pplxDelta)} citations | ChatGPT: ${fmt(gptDelta)} citations\n` +
+          (pplxDelta === 0 && gptDelta === 0 ? "No change since last check." : pplxDelta + gptDelta > 0 ? "📈 Citation presence improving." : "📉 Citation presence declined.");
+      } else {
+        deltaSection = "\n\n## DELTA VS PREVIOUS RUN\nFirst run for this domain — no previous data to compare.";
+      }
+    } catch {}
+  }
 
   const lines: string[] = [
     `## Live Citation Check — ${domain}`,
@@ -536,7 +593,8 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
     zeroCitations
       ? `⚠️ ${domain} has ZERO citations across all four AI engines. This is the #1 priority finding in this audit.`
       : `Citation presence: Perplexity ${pplxCited}/${pplxResults.length} | ChatGPT ${gptCited}/${gptResults.length} | Google AI Overviews ${aioCited}/${aioResults.length || "n/a"} | Bing/Copilot ${bingCited}/${bingResults.length || "n/a"}.`,
+    caller_id ? `\n📊 Results saved to citation history (caller: ${caller_id})` : "",
   ].filter((l) => l !== undefined);
 
-  return lines.join("\n");
+  return lines.join("\n") + deltaSection;
 }
