@@ -655,3 +655,71 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
 
   return lines.join("\n") + deltaSection;
 }
+
+// ── Raw citation check (used by share-of-voice endpoint) ──────────────────────
+
+export type CitationSnapshot = {
+  domain: string;
+  perplexity: { cited: number; total: number; results: CitRow[] };
+  chatgpt: { cited: number; total: number; results: CitRow[] };
+  googleAIO: { cited: number; total: number; results: CitRow[] };
+  bing: { cited: number; total: number; results: CitRow[] };
+  competitors: string[];
+  sentiment: SentimentResult[];
+};
+
+export async function checkCitationsRaw(domain: string, queries: string[]): Promise<CitationSnapshot> {
+  const pplxKey = process.env.PPLX_API_KEY;
+  const openaiKey = process.env.OPENAI_API_KEY;
+  const hasDFS = !!(process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD);
+
+  const pplxResults: (CitRow & { answer: string })[] = [];
+  const gptResults: (CitRow & { answer: string })[] = [];
+  const aioResults: CitRow[] = [];
+  const bingResults: CitRow[] = [];
+
+  await Promise.all(queries.slice(0, 6).map(async (query) => {
+    const [pplx, gpt, aio, bing] = await Promise.allSettled([
+      pplxKey ? queryPplxRaw(query, pplxKey) : Promise.resolve({ answer: "", citations: [] }),
+      openaiKey ? queryGPTRaw(query, openaiKey) : Promise.resolve({ answer: "", citations: [] }),
+      hasDFS ? queryGoogleAIOverview(query) : Promise.resolve({ text: "", sources: [] }),
+      hasDFS ? queryBingResults(query) : Promise.resolve({ text: "", sources: [] }),
+    ]);
+    if (pplxKey && pplx.status === "fulfilled") {
+      const r = extractCitationResult(domain, pplx.value.answer, pplx.value.citations);
+      pplxResults.push({ ...r, query, answer: pplx.value.answer });
+    }
+    if (openaiKey && gpt.status === "fulfilled") {
+      const r = extractCitationResult(domain, gpt.value.answer, gpt.value.citations);
+      gptResults.push({ ...r, query, answer: gpt.value.answer });
+    }
+    if (hasDFS && aio.status === "fulfilled" && (aio.value.text || aio.value.sources.length)) {
+      const r = extractCitationResult(domain, aio.value.text, aio.value.sources);
+      aioResults.push({ ...r, query });
+    }
+    if (hasDFS && bing.status === "fulfilled" && bing.value.sources.length) {
+      const r = extractCitationResult(domain, "", bing.value.sources);
+      bingResults.push({ ...r, query });
+    }
+  }));
+
+  const allCompetitors = [
+    ...new Set([...pplxResults, ...gptResults, ...aioResults, ...bingResults].flatMap((r) => r.competitors)),
+  ].slice(0, 8);
+
+  const sentimentInputs = [
+    ...pplxResults.map((r) => ({ query: r.query, engine: "perplexity", answer: r.answer, cited: r.cited })),
+    ...gptResults.map((r) => ({ query: r.query, engine: "chatgpt", answer: r.answer, cited: r.cited })),
+  ];
+  const sentiment = await classifyAnswerSentiment(domain, sentimentInputs);
+
+  return {
+    domain,
+    perplexity: { cited: pplxResults.filter((r) => r.cited).length, total: pplxResults.length, results: pplxResults.map(({ query, cited, competitors, sources }) => ({ query, cited, competitors, sources })) },
+    chatgpt: { cited: gptResults.filter((r) => r.cited).length, total: gptResults.length, results: gptResults.map(({ query, cited, competitors, sources }) => ({ query, cited, competitors, sources })) },
+    googleAIO: { cited: aioResults.filter((r) => r.cited).length, total: aioResults.length, results: aioResults.map(({ query, cited, competitors, sources }) => ({ query, cited, competitors, sources })) },
+    bing: { cited: bingResults.filter((r) => r.cited).length, total: bingResults.length, results: bingResults.map(({ query, cited, competitors, sources }) => ({ query, cited, competitors, sources })) },
+    competitors: allCompetitors,
+    sentiment,
+  };
+}
