@@ -37,8 +37,9 @@
     "api/schema.ts":   { "maxDuration": 300 },
     "api/llms-txt.ts": { "maxDuration": 300 },
     "api/progress.ts": { "maxDuration": 300 },
-    "api/mcp.ts":      { "maxDuration": 300 },
-    "api/internal.ts": { "maxDuration": 300 }
+    "api/mcp.ts":             { "maxDuration": 300 },
+    "api/internal.ts":        { "maxDuration": 300 },
+    "api/share-of-voice.ts":  { "maxDuration": 300 }
   },
   "crons": [
     {
