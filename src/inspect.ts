@@ -84,6 +84,7 @@ export interface InspectResult {
   p1Gaps: string[];
   p2Gaps: string[];
   p3Gaps: string[];
+  confidenceScore: number;
   auditTimestamp: string;
   deltaVsPreviousAudit?: Record<string, any>;
 }
@@ -525,7 +526,7 @@ function assessEEAT(
   // External authority links
   const externalLinks: string[] = [];
   $("a[href]").each((_, el) => {
-    const href = $<typeof el>(el as any).attr("href") || "";
+    const href = $(el).attr("href") || "";
     try {
       const u = new URL(href);
       if (u.hostname !== crawl.domain && u.protocol.startsWith("http")) {
@@ -953,6 +954,17 @@ export async function runInspectSiteStructure(input: {
   else if (conversationalScore < 80) p2Gaps.push(...conversationalIssues);
   if (stalenessRisk) p2Gaps.push(`Content last updated ${freshnessDate} — refresh content to maintain AI engine trust`);
 
+  // Confidence score — how much signal was available for this audit
+  // Low word count, no schema, no headings = low confidence in findings
+  const confidenceScore = Math.min(
+    100,
+    (crawl.wordCount >= 500 ? 40 : crawl.wordCount >= 150 ? 25 : 10) +
+    (schemas.length >= 3 ? 25 : schemas.length >= 1 ? 15 : 0) +
+    (crawl.headings.length >= 5 ? 20 : crawl.headings.length >= 2 ? 10 : 0) +
+    (crawl.metaDescription ? 10 : 0) +
+    (freshnessDate ? 5 : 0)
+  );
+
   // Overall score — weighted average
   const overallScore = Math.round(
     (eatScore * 0.2 +
@@ -999,6 +1011,7 @@ export async function runInspectSiteStructure(input: {
           p1Gaps,
           p2Gaps,
           p3Gaps,
+          confidenceScore,
           auditTimestamp,
         };
         deltaVsPreviousAudit = computeDelta(resultForDelta, lastAudit);
@@ -1027,6 +1040,7 @@ export async function runInspectSiteStructure(input: {
     p1Gaps,
     p2Gaps,
     p3Gaps,
+    confidenceScore,
     auditTimestamp,
     deltaVsPreviousAudit,
   };
@@ -1048,6 +1062,7 @@ export async function runInspectSiteStructure(input: {
       freshnessScore,
       paaScore,
       conversationalScore,
+      confidenceScore,
       schemaPresent: presentTypes,
       p1Count: p1Gaps.length,
       p2Count: p2Gaps.length,
@@ -1085,7 +1100,7 @@ export async function runInspectSiteStructure(input: {
 
   return `## inspectSiteStructure — ${url}
 
-**Overall AI Visibility Score: ${overallScore}/100**
+**Overall AI Visibility Score: ${overallScore}/100** (Audit confidence: ${confidenceScore}/100${confidenceScore < 50 ? " — low signal, JS-heavy site or thin content" : ""})
 - E-E-A-T: ${eatScore}/100
 - Entity Clarity: ${entityScore}/100
 - Content Freshness: ${freshnessScore}/100 (last updated: ${freshnessDate ?? "unknown"})

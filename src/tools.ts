@@ -1,11 +1,12 @@
 /**
- * tools.ts — AEONOS: 5 core tools
+ * tools.ts — AEONOS: 6 core tools
  *
  * 1. queryLiveResearch   — Live AEO/GEO knowledge (proprietary data source)
  * 2. retrieveSharedAEO   — AEONOS seeded AEO/GEO knowledge base
  * 3. retrieveCallerMemory — Caller-specific persistent context
  * 4. storeCallerMemory   — Save new context for this caller
- * 5. generateReport      — Structured AEO audit/strategy report
+ * 5. checkLiveCitations  — Real citation data from Perplexity, ChatGPT, Google AI Overviews, Bing/Copilot
+ * 6. inspectSiteStructure — 10-function site audit with confidence score + delta reporting
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -122,13 +123,13 @@ export const tools: Anthropic.Tool[] = [
   {
     name: "checkLiveCitations",
     description:
-      "Check whether a domain is actually being cited by Perplexity in response to AI search queries. " +
+      "Check whether a domain is being cited by Perplexity, ChatGPT, Google AI Overviews, and Bing/Copilot. " +
       "This is REAL citation data — not structural inference. Call this during every audit to ground " +
       "your recommendations in actual AI search behaviour. " +
       "Pass the domain being audited and 4-6 queries that represent how their target customers " +
       "search in AI engines (e.g. 'best AI SEO tool for small business', 'how to rank in ChatGPT'). " +
-      "Returns: cited (bool), per-query results with sources found, citation score, and competitor URLs " +
-      "that ARE being cited instead. Use this data in your audit output.",
+      "Returns: per-engine citation score (0-100), per-query results with sources found, and competitor URLs " +
+      "that ARE being cited instead. All scores are 0-100. Use this data in your audit output.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -220,7 +221,7 @@ export async function executeTool(
     case "checkLiveCitations":
       return await runCheckLiveCitations(input);
     case "inspectSiteStructure":
-      return await runInspectSiteStructure(input);
+      return await runInspectSiteStructure(input as { url: string; caller_id: string; target_query?: string });
     default:
       return `Unknown tool: ${name}`;
   }
@@ -410,6 +411,31 @@ async function queryGPTRaw(question: string, key: string): Promise<{ answer: str
   } catch { return { answer: "", citations: [] }; }
 }
 
+async function queryBingResults(query: string): Promise<{ text: string; sources: string[] }> {
+  const login = process.env.DATAFORSEO_LOGIN;
+  const password = process.env.DATAFORSEO_PASSWORD;
+  if (!login || !password) return { text: "", sources: [] };
+  try {
+    const auth = Buffer.from(`${login}:${password}`).toString("base64");
+    const res = await fetch("https://api.dataforseo.com/v3/serp/bing/organic/live/regular", {
+      method: "POST",
+      headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
+      body: JSON.stringify([{ keyword: query, location_code: 2840, language_code: "en", device: "desktop", depth: 10 }]),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) return { text: "", sources: [] };
+    const data = await res.json() as any;
+    const items: any[] = data.tasks?.[0]?.result?.[0]?.items ?? [];
+    // Bing Copilot draws from organic results — top 10 = Copilot source pool
+    const sources: string[] = items
+      .filter((item: any) => item.type === "organic")
+      .slice(0, 10)
+      .map((i: any) => i.url ?? "")
+      .filter(Boolean);
+    return { text: "", sources };
+  } catch { return { text: "", sources: [] }; }
+}
+
 async function queryGoogleAIOverview(query: string): Promise<{ text: string; sources: string[] }> {
   const login = process.env.DATAFORSEO_LOGIN;
   const password = process.env.DATAFORSEO_PASSWORD;
@@ -450,12 +476,14 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
   const pplxResults: CitRow[] = [];
   const gptResults: CitRow[] = [];
   const aioResults: CitRow[] = [];
+  const bingResults: CitRow[] = [];
 
   await Promise.all(queries.slice(0, 6).map(async (query) => {
-    const [pplx, gpt, aio] = await Promise.allSettled([
+    const [pplx, gpt, aio, bing] = await Promise.allSettled([
       pplxKey ? queryPplxRaw(query, pplxKey) : Promise.resolve({ answer: "", citations: [] }),
       openaiKey ? queryGPTRaw(query, openaiKey) : Promise.resolve({ answer: "", citations: [] }),
       hasDFS ? queryGoogleAIOverview(query) : Promise.resolve({ text: "", sources: [] }),
+      hasDFS ? queryBingResults(query) : Promise.resolve({ text: "", sources: [] }),
     ]);
 
     if (pplxKey && pplx.status === "fulfilled") {
@@ -470,18 +498,25 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
       const r = extractCitationResult(domain, aio.value.text, aio.value.sources);
       aioResults.push({ ...r, query });
     }
+    if (hasDFS && bing.status === "fulfilled" && bing.value.sources.length) {
+      const r = extractCitationResult(domain, "", bing.value.sources);
+      bingResults.push({ ...r, query });
+    }
   }));
 
   const pplxCited = pplxResults.filter((r) => r.cited).length;
   const gptCited = gptResults.filter((r) => r.cited).length;
   const aioCited = aioResults.filter((r) => r.cited).length;
-  const allCompetitors = [...new Set([...pplxResults, ...gptResults, ...aioResults].flatMap((r) => r.competitors))].slice(0, 8);
+  const bingCited = bingResults.filter((r) => r.cited).length;
+  const allCompetitors = [...new Set([...pplxResults, ...gptResults, ...aioResults, ...bingResults].flatMap((r) => r.competitors))].slice(0, 8);
+  const zeroCitations = pplxCited === 0 && gptCited === 0 && aioCited === 0 && bingCited === 0;
 
   const lines: string[] = [
     `## Live Citation Check — ${domain}`,
     pplxKey ? `Perplexity: ${pplxCited}/${pplxResults.length} queries cited` : "",
     openaiKey ? `ChatGPT: ${gptCited}/${gptResults.length} queries cited` : "",
     hasDFS && aioResults.length ? `Google AI Overviews: ${aioCited}/${aioResults.length} queries cited` : "",
+    hasDFS && bingResults.length ? `Bing/Copilot (source pool): ${bingCited}/${bingResults.length} queries in index` : "",
     "",
     ...pplxResults.map((r) =>
       `${r.cited ? "✅" : "❌"} [Perplexity] "${r.query}"\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Competitors: ${r.competitors.join(", ") || "none identified"}`}`
@@ -492,12 +527,15 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
     ...aioResults.map((r) =>
       `${r.cited ? "✅" : "❌"} [Google AI Overview] "${r.query}"\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Competitors: ${r.competitors.join(", ") || "none identified"}`}`
     ),
+    ...bingResults.map((r) =>
+      `${r.cited ? "✅" : "❌"} [Bing/Copilot] "${r.query}"\n   ${r.cited ? `In index: ${r.sources.join(", ")}` : `Competitors: ${r.competitors.join(", ") || "none identified"}`}`
+    ),
     "",
     allCompetitors.length ? `Competitor domains appearing instead: ${allCompetitors.join(", ")}` : "",
     "",
-    pplxCited === 0 && gptCited === 0 && aioCited === 0
-      ? `⚠️ ${domain} has ZERO citations across all three AI engines. This is the #1 priority finding in this audit.`
-      : `Citation presence: Perplexity ${pplxCited}/${pplxResults.length} | ChatGPT ${gptCited}/${gptResults.length} | Google AI Overviews ${aioCited}/${aioResults.length || "n/a"}.`,
+    zeroCitations
+      ? `⚠️ ${domain} has ZERO citations across all four AI engines. This is the #1 priority finding in this audit.`
+      : `Citation presence: Perplexity ${pplxCited}/${pplxResults.length} | ChatGPT ${gptCited}/${gptResults.length} | Google AI Overviews ${aioCited}/${aioResults.length || "n/a"} | Bing/Copilot ${bingCited}/${bingResults.length || "n/a"}.`,
   ].filter((l) => l !== undefined);
 
   return lines.join("\n");
