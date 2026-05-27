@@ -22,6 +22,8 @@ const db = createClient(
   process.env.SUPABASE_SERVICE_KEY!
 );
 
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+
 // ── Tool definitions ───────────────────────────────────────────────────────────
 
 export const tools: Anthropic.Tool[] = [
@@ -368,6 +370,48 @@ async function runStoreCallerMemory(input: Record<string, any>): Promise<string>
 
 type CitRow = { query: string; cited: boolean; competitors: string[]; sources: string[] };
 
+type SentimentResult = {
+  query: string;
+  engine: string;
+  cited: boolean;
+  sentiment: "positive" | "neutral" | "negative";
+  reason: string;
+};
+
+async function classifyAnswerSentiment(
+  domain: string,
+  answers: { query: string; engine: string; answer: string; cited: boolean }[]
+): Promise<SentimentResult[]> {
+  const withText = answers.filter((a) => a.answer.length > 60);
+  if (!withText.length) return [];
+
+  const prompt = `You are analysing how AI search engines talk about the domain "${domain}".
+
+For each answer below, classify the sentiment toward "${domain}" (or toward this topic/industry if the domain is not cited):
+- "positive": domain/brand mentioned favourably, or topic framed in a way that benefits visibility
+- "neutral": factual or balanced, no strong positive/negative signal
+- "negative": domain mentioned unfavourably, or answer actively directs users away from this type of solution
+
+Return ONLY a JSON array. Each element: {"query":"...","engine":"...","cited":true/false,"sentiment":"positive"|"neutral"|"negative","reason":"one short sentence"}
+
+Answers:
+${withText.map((a, i) => `${i + 1}. [${a.engine}] Query: "${a.query}" | Cited: ${a.cited}\nAnswer: ${a.answer.slice(0, 600)}`).join("\n\n")}`;
+
+  try {
+    const res = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1024,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) return [];
+    return JSON.parse(jsonMatch[0]) as SentimentResult[];
+  } catch {
+    return [];
+  }
+}
+
 function extractCitationResult(domain: string, answer: string, citations: string[]): CitRow & { query: string } {
   const domainClean = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
   const rx = new RegExp(domainClean.replace(".", "\\."), "i");
@@ -517,6 +561,13 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
   const zeroCitations = pplxCited === 0 && gptCited === 0 && aioCited === 0 && bingCited === 0;
   const timestamp = new Date().toISOString();
 
+  // Sentiment analysis — batch all answers with text into one Haiku call
+  const sentimentInputs = [
+    ...pplxResults.map((r) => ({ query: r.query, engine: "perplexity", answer: r.answer, cited: r.cited })),
+    ...gptResults.map((r) => ({ query: r.query, engine: "chatgpt", answer: r.answer, cited: r.cited })),
+  ];
+  const sentimentResults = await classifyAnswerSentiment(domain, sentimentInputs);
+
   // Persist to citation_history when caller_id is provided
   let deltaSection = "";
   if (caller_id) {
@@ -535,11 +586,11 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
         chatgpt: { cited: gptCited, total: gptResults.length, results: gptResults.map(({ query, cited, competitors, sources }) => ({ query, cited, competitors, sources })) },
         googleAIO: { cited: aioCited, total: aioResults.length },
         bing: { cited: bingCited, total: bingResults.length },
-        // Store raw answer text for future sentiment analysis
         answers: {
           perplexity: pplxResults.map(({ query, answer }) => ({ query, answer: answer.slice(0, 1000) })),
           chatgpt: gptResults.map(({ query, answer }) => ({ query, answer: answer.slice(0, 1000) })),
         },
+        sentiment: sentimentResults,
         competitors: allCompetitors,
       };
 
@@ -593,6 +644,12 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
     zeroCitations
       ? `⚠️ ${domain} has ZERO citations across all four AI engines. This is the #1 priority finding in this audit.`
       : `Citation presence: Perplexity ${pplxCited}/${pplxResults.length} | ChatGPT ${gptCited}/${gptResults.length} | Google AI Overviews ${aioCited}/${aioResults.length || "n/a"} | Bing/Copilot ${bingCited}/${bingResults.length || "n/a"}.`,
+    sentimentResults.length
+      ? `\n## Sentiment Analysis\n` + sentimentResults.map((s) => {
+          const icon = s.sentiment === "positive" ? "🟢" : s.sentiment === "negative" ? "🔴" : "🟡";
+          return `${icon} [${s.engine}] "${s.query}" → ${s.sentiment.toUpperCase()}${s.cited ? " (cited)" : ""}: ${s.reason}`;
+        }).join("\n")
+      : "",
     caller_id ? `\n📊 Results saved to citation history (caller: ${caller_id})` : "",
   ].filter((l) => l !== undefined);
 
