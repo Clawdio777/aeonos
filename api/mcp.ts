@@ -137,12 +137,18 @@ function buildX402Fetch(privateKey: string) {
   return wrapFetchWithPayment(fetch, client);
 }
 
-async function callAeonos(path: string, query: string, callerId: string, privateKey: string): Promise<string> {
-  const x402Fetch = buildX402Fetch(privateKey);
-  const res = await x402Fetch(`${BASE_URL}${path}`, {
+async function callAeonos(
+  path: string, query: string, callerId: string,
+  auth: { privateKey?: string; internalKey?: string }
+): Promise<string> {
+  const paidFetch = auth.internalKey
+    ? (url: RequestInfo | URL, init?: RequestInit) =>
+        fetch(url, { ...init, headers: { ...(init?.headers as Record<string, string> ?? {}), "x-internal-key": auth.internalKey! } })
+    : buildX402Fetch(auth.privateKey!);
+  const res = await paidFetch(`${BASE_URL}${path}`, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ query, caller_id: callerId || "smithery-user" }),
+    body:    JSON.stringify({ query, caller_id: callerId || "mcp-user" }),
   });
   if (!res.ok) throw new Error(`AEONOS error: HTTP ${res.status} — ${await res.text()}`);
   const data = await res.json() as any;
@@ -157,8 +163,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
+  // PayGated auth — token embedded in PAYGATE_REMOTE_URL query string (PayGated preserves ?pg_token=... when proxying)
+  const pgToken    = req.query.pg_token as string | undefined;
+  const isPaygated = !!pgToken && !!process.env.PAYGATE_AUTH_SECRET && pgToken === process.env.PAYGATE_AUTH_SECRET;
+  const internalKey  = isPaygated ? process.env.INTERNAL_API_KEY : undefined;
+
   // Get wallet key and optional caller ID from Smithery config headers
-  const privateKey = (
+  const privateKey = isPaygated ? undefined : (
     req.headers["x-smithery-config-aeonos-private-key"] ??
     req.headers["x-wallet-key"] ??
     process.env.MCP_DEMO_PRIVATE_KEY
@@ -303,20 +314,21 @@ Payments are handled automatically via x402 (USDC on Base). Each call deducts fr
       return res.json({ jsonrpc: "2.0", id, error: { code: -32601, message: `Unknown tool: ${name}` } });
     }
 
-    if (!privateKey) {
+    if (!isPaygated && !privateKey) {
       return res.json({
         jsonrpc: "2.0", id,
         result: {
           content: [{
             type: "text",
-            text: "⚠️ **AEONOS_PRIVATE_KEY not configured.**\n\nTo use AEONOS tools, configure a Base wallet private key with USDC in the Smithery connection settings.\n\nGet USDC on Base at coinbase.com/wallet, then add your private key (0x...) as AEONOS_PRIVATE_KEY.",
+            text: "⚠️ **Payment not configured.**\n\nTwo options:\n\n**Option 1 — Pay with card (no wallet needed):**\nBuy credits at https://aeonos.basechainlabs.com/#get-access and use your API key as `AEONOS_API_KEY` in settings.\n\n**Option 2 — Pay with USDC (x402):**\nAdd a Base wallet private key with USDC as `AEONOS_PRIVATE_KEY`. Get USDC on Base at coinbase.com/wallet.",
           }],
         },
       });
     }
 
     try {
-      const text = await callAeonos(path, args.query, args.caller_id || defaultCallerId || "", privateKey);
+      const text = await callAeonos(path, args.query, args.caller_id || defaultCallerId || "",
+        isPaygated ? { internalKey } : { privateKey });
       return res.json({
         jsonrpc: "2.0", id,
         result: { content: [{ type: "text", text }] },

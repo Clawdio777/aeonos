@@ -51,6 +51,7 @@
     "cheerio": "^1.2.0",
     "dotenv": "^17.4.2",
     "viem": "^2.48.11",
+    "stripe": "^17.7.0",
     "x402": "^1.2.0"
   },
   "devDependencies": {
