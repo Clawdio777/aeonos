@@ -16,10 +16,10 @@ const NOTIFY_EMAIL = process.env.NOTIFY_EMAIL || "clawdio777@gmail.com";
 // Pinned versions from package.json at time of last skill update
 // Update these when you intentionally upgrade the packages
 const PINNED: Record<string, string> = {
-  "@x402/core":       "2.11.0",
-  "@x402/evm":        "2.11.0",
-  "@x402/extensions": "2.11.0",
-  "@x402/fetch":      "2.11.0",
+  "@x402/core":       "2.14.0",
+  "@x402/evm":        "2.14.0",
+  "@x402/extensions": "2.14.0",
+  "@x402/fetch":      "2.14.0",
   "@coinbase/x402":   "2.1.0",
 };
 
