@@ -169,3 +169,90 @@ Why is your competitor cited in ChatGPT and you're not? Usually 3 things: missin
 
 Cast 4 (week 4):
 AEO ≠ SEO. Google ranks pages. AI engines cite entities. If your site doesn't clearly define what you are, who you serve, and what you do in structured data — you're invisible to Perplexity, Claude, and ChatGPT. AEONOS fixes that. npx aeonos-mcp · x402 on Base
+
+---
+
+## AEO/GEO Roundup Outreach — Pitch & Submission Tracker
+
+### Standard pitch (3 sentences)
+
+AEONOS is the only MCP-native AEO/GEO agent callable by other AI agents via x402 micropayments on Base blockchain. Unlike SaaS dashboards, it integrates directly into agent workflows — any Claude, Cursor, or MCP-compatible agent can call AEONOS mid-task without a subscription. Try it: `npx aeonos-mcp` (npm) · https://smithery.ai/servers/clawdio777/aeonos (Smithery)
+
+---
+
+### Scrunch
+
+**Target:** scrunch.com/blog contact form / editorial team
+**URL:** https://scrunch.com/blog
+**Submit via:** Contact form or editorial@scrunch.com (check site for current address)
+**Subject:** Tool submission: AEONOS for your AEO/GEO roundup
+**Body:**
+
+Hi,
+
+I wanted to flag AEONOS for inclusion in any upcoming AEO or GEO tool roundups on the Scrunch blog.
+
+AEONOS is the only MCP-native AEO/GEO agent callable by other AI agents via x402 micropayments on Base blockchain. Unlike SaaS dashboards, it integrates directly into agent workflows — any Claude, Cursor, or MCP-compatible agent can call AEONOS mid-task without a subscription. Try it: `npx aeonos-mcp` (npm) · https://smithery.ai/servers/clawdio777/aeonos (Smithery)
+
+Happy to provide a demo, case data, or a short quote for editorial context.
+
+Thanks
+
+**Status:** [ ] Submitted | Date: ___
+
+---
+
+### Frase
+
+**Target:** frase.io editorial / content team
+**URL:** https://frase.io/blog
+**Submit via:** hello@frase.io or in-app contact (check site for current address)
+**Subject:** Tool submission: AEONOS — MCP-native AEO/GEO agent for your roundup
+**Body:**
+
+Hi Frase team,
+
+I'm reaching out about AEONOS, which I think fits well in any roundup covering AEO or GEO tools.
+
+AEONOS is the only MCP-native AEO/GEO agent callable by other AI agents via x402 micropayments on Base blockchain. Unlike SaaS dashboards, it integrates directly into agent workflows — any Claude, Cursor, or MCP-compatible agent can call AEONOS mid-task without a subscription. Try it: `npx aeonos-mcp` (npm) · https://smithery.ai/servers/clawdio777/aeonos (Smithery)
+
+Let me know if you'd like screenshots, audit output samples, or a walkthrough.
+
+Thanks
+
+**Status:** [ ] Submitted | Date: ___
+
+---
+
+### Medium / Meridian (@try_meridian)
+
+**Target:** Reply to the Medium post at medium.com/@try_meridian that published the AEO/GEO roundup
+**Submit via:** Medium comment / reply on the relevant post
+**Reply text:**
+
+Great roundup — one tool worth adding to a future edition: AEONOS is the only MCP-native AEO/GEO agent callable by other AI agents via x402 micropayments on Base blockchain. Unlike SaaS dashboards, it integrates directly into agent workflows. Try it: `npx aeonos-mcp` · https://smithery.ai/servers/clawdio777/aeonos
+
+**Status:** [ ] Submitted | Date: ___
+
+---
+
+### Hidekazu Konishi — MCP Ecosystem Reference (2026 page)
+
+**Target:** hidekazu-konishi.com — MCP ecosystem reference author
+**Submit via:** Contact form at hidekazu-konishi.com (check site for current address)
+**Subject:** Submission for MCP ecosystem reference — AEONOS AEO/GEO agent
+**Body:**
+
+Hi Hidekazu,
+
+I've been following your MCP ecosystem reference work and wanted to submit AEONOS for consideration in the 2026 edition.
+
+AEONOS is the only MCP-native AEO/GEO agent callable by other AI agents via x402 micropayments on Base blockchain. Unlike SaaS dashboards, it integrates directly into agent workflows — any Claude, Cursor, or MCP-compatible agent can call AEONOS mid-task without a subscription. Try it: `npx aeonos-mcp` (npm) · https://smithery.ai/servers/clawdio777/aeonos (Smithery)
+
+Category suggestion: AEO/GEO · AI Search Visibility · Agent-to-Agent (A2A) tooling
+
+Happy to provide any additional detail you need for the reference page.
+
+Thanks
+
+**Status:** [ ] Submitted | Date: ___
