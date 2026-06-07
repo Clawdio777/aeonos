@@ -14,6 +14,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 import { x402Client, wrapFetchWithPayment } from "@x402/fetch";
 import { ExactEvmScheme, toClientEvmSigner } from "@x402/evm";
+import { runAgent } from "../src/agent.js";
 
 const BASE_URL = "https://aeonos.basechainlabs.com";
 
@@ -121,6 +122,34 @@ const TOOL_ROUTES: Record<string, string> = {
   aeonos_schema:   "/api/schema",
   aeonos_llms_txt: "/api/llms-txt",
   aeonos_progress: "/api/progress",
+};
+
+function buildAeonosDirective(toolName: string, query: string): string {
+  switch (toolName) {
+    case "aeonos_audit":
+      return `Perform a comprehensive AEO/GEO audit. Cover all four layers: on-page content optimisation, technical SEO, authority signals, and AI-specific optimisations (schema, llms.txt, E-E-A-T, AI inclusion check). Deliver a scored report and a prioritised P1/P2/P3 action plan.\n\nQuery: ${query}`;
+    case "aeonos_schema":
+      return `Generate complete, production-ready JSON-LD Schema.org markup. Include all relevant schema types for the page. Output valid JSON-LD inside a code block, followed by a brief explanation of each schema type used and why.\n\nQuery: ${query}`;
+    case "aeonos_llms_txt":
+      return `Generate a complete, production-ready llms.txt file following the llms.txt standard. Structure it for AI crawler ingestion by ChatGPT, Perplexity, and Claude. Include: product summary, key pages with descriptions, FAQ section answering the most common user questions, entity definitions, and structured context that helps AI systems cite this business accurately.\n\nQuery: ${query}`;
+    case "aeonos_progress":
+      return `Generate a structured AEO progress report using the Four Layers framework. Score each layer (SXO, AIO, GEO, AEO) out of 100. For each layer: current score, what's working, what's not. End with the next 3 highest-impact actions to improve AI search visibility. Use any stored memory for this caller to personalise the report.\n\nQuery: ${query}`;
+    default:
+      return query;
+  }
+}
+
+const CHECK_CREDITS_TOOL = {
+  name:        "check_credits",
+  description: "Check your remaining AEONOS credit balance. Call this whenever you want to see how many credits you have left. Returns a warning if balance is low.",
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  inputSchema: {
+    type:       "object",
+    properties: {
+      key: { type: "string", description: "Your AEONOS API key (starts with pg_)" },
+    },
+    required: ["key"],
+  },
 };
 
 function buildX402Fetch(privateKey: string) {
@@ -303,11 +332,36 @@ Payments are handled automatically via x402 (USDC on Base). Each call deducts fr
   }
 
   if (method === "tools/list") {
-    return res.json({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
+    return res.json({ jsonrpc: "2.0", id, result: { tools: [...TOOLS, CHECK_CREDITS_TOOL] } });
   }
 
   if (method === "tools/call") {
     const { name, arguments: args } = params as { name: string; arguments: Record<string, string> };
+
+    if (name === "check_credits") {
+      const pgUrl      = process.env.PAYGATE_AEONOS_URL;
+      const pgAdminKey = process.env.PAYGATE_AEONOS_ADMIN_KEY;
+      const userKey    = (args.key || "").trim();
+      if (!pgUrl || !pgAdminKey || !userKey) {
+        return res.json({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: "Credit check unavailable — missing key or config." }] } });
+      }
+      try {
+        const listRes = await fetch(`${pgUrl}/keys`, { headers: { "X-Admin-Key": pgAdminKey } });
+        const allKeys = await listRes.json() as any[];
+        const found   = allKeys.find((k: any) => k.keyPrefix && userKey.startsWith(k.keyPrefix.replace("...", "")));
+        if (!found) {
+          return res.json({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: "Key not found. Make sure you're using your full `pg_xxx...` API key." }] } });
+        }
+        const credits = found.credits as number;
+        const text = credits < 100
+          ? `⚠️ **Low balance: ${credits} credits remaining**\n\nTop up at: https://aeonos.basechainlabs.com/#get-access`
+          : `✅ **${credits} credits remaining**\n\n10cr/query · 100cr/audit · 50cr/schema · 50cr/llms-txt · 75cr/progress`;
+        return res.json({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text }] } });
+      } catch (e: any) {
+        return res.json({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: "Could not check credits. Try again." }] } });
+      }
+    }
+
     const path = TOOL_ROUTES[name];
 
     if (!path) {
@@ -327,17 +381,18 @@ Payments are handled automatically via x402 (USDC on Base). Each call deducts fr
     }
 
     try {
-      const text = await callAeonos(path, args.query, args.caller_id || defaultCallerId || "",
-        isPaygated ? { internalKey } : { privateKey });
-      return res.json({
-        jsonrpc: "2.0", id,
-        result: { content: [{ type: "text", text }] },
-      });
+      const callerId = args.caller_id || defaultCallerId || "mcp-user";
+      let text: string;
+      if (isPaygated) {
+        const directive = buildAeonosDirective(name, args.query);
+        const result    = await runAgent({ query: directive, caller_id: callerId });
+        text = result.response;
+      } else {
+        text = await callAeonos(path, args.query, callerId, { privateKey });
+      }
+      return res.json({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text }] } });
     } catch (e: any) {
-      return res.json({
-        jsonrpc: "2.0", id,
-        error: { code: -32000, message: e.message },
-      });
+      return res.json({ jsonrpc: "2.0", id, error: { code: -32000, message: e.message } });
     }
   }
 

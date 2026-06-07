@@ -41,7 +41,8 @@
     "api/internal.ts":        { "maxDuration": 300 },
     "api/share-of-voice.ts":  { "maxDuration": 300 },
     "api/checkout.ts":        { "maxDuration": 30 },
-    "api/stripe-webhook.ts":  { "maxDuration": 30 }
+    "api/stripe-webhook.ts":  { "maxDuration": 30 },
+    "api/recover-key.ts":     { "maxDuration": 30 }
   },
   "crons": [
     {
