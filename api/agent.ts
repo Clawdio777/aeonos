@@ -86,6 +86,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // v2 uses "payment-signature"; also accept legacy "x-payment" for backward compat
   const xPaymentHeader = (req.headers["payment-signature"] ?? req.headers["x-payment"]) as string | undefined;
 
+  // PayGated internal bypass — already authenticated + billed via credit system
+  const internalKey = req.headers["x-internal-key"] as string | undefined;
+  if (internalKey && process.env.INTERNAL_API_KEY && internalKey === process.env.INTERNAL_API_KEY) {
+    if (!query) return jsonRpcError(res, isJsonRpc, jsonRpcId, -32602, "Missing query");
+    const queryCount = await getQueryCount(caller_id);
+    try {
+      if (isStream) return await handleStream(req, res, query, caller_id, undefined);
+      if (isAsync)  return await handleAsync(req, res, query, caller_id, isJsonRpc, jsonRpcId, undefined);
+      return await handleSync(req, res, query, caller_id, isJsonRpc, jsonRpcId, undefined, queryCount);
+    } catch (e: any) {
+      console.error("[aeonos] Error:", e.message, e.stack);
+      return jsonRpcError(res, isJsonRpc, jsonRpcId, -32000, e.message);
+    }
+  }
+
   // Discovery probe: no query body + no payment = CDP Facilitator or agent discovery probe.
   // Always return 402 so CDP can extract extensions.bazaar and index the service.
   if (!query) {

@@ -42,9 +42,4 @@ startCommand:
         description: "Base wallet private key (0x...) with USDC for x402 payments. Get USDC on Base at coinbase.com/wallet."
     required:
       - AEONOS_PRIVATE_KEY
-  commandFunction: |-
-    (config) => ({
-      command: "node",
-      args: ["mcp-server.mjs"],
-      env: { AEONOS_PRIVATE_KEY: config.AEONOS_PRIVATE_KEY }
-    })
+  commandFunction: ./smithery-command.js
