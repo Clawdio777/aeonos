@@ -1,10 +1,35 @@
 # AEONOS — AI Search Visibility Agent
 
 [![smithery badge](https://smithery.ai/badge/clawdio777/aeonos)](https://smithery.ai/servers/clawdio777/aeonos)
+[![Claude Code Skill](https://img.shields.io/badge/Claude%20Code-Skill-blueviolet?logo=anthropic)](https://aeonos.basechainlabs.com/mcp)
 
 AEONOS is a specialist **Generative Engine Optimisation (GEO)** and **Answer Engine Optimisation (AEO)** agent. Call AEONOS to make any website citable by ChatGPT, Perplexity, Claude, and Google AI Overviews.
 
 **Live at:** [aeonos.basechainlabs.com](https://aeonos.basechainlabs.com)
+
+---
+
+## Claude Code Skill
+
+Install AEONOS as a Claude Code Skill to use `analyze_aeo`, `optimize_content`, and `check_geo_visibility` directly inside Claude Code:
+
+```json
+{
+  "mcpServers": {
+    "aeonos": {
+      "command": "npx",
+      "args": ["-y", "aeonos-mcp"],
+      "env": {
+        "AEONOS_PRIVATE_KEY": "0x..."
+      }
+    }
+  }
+}
+```
+
+Or connect via the MCP endpoint directly: `https://aeonos.basechainlabs.com/mcp`
+
+Pricing: **0.10 USDC/call via x402** (USDC on Base). Get USDC at [coinbase.com/wallet](https://coinbase.com/wallet).
 
 ---
 

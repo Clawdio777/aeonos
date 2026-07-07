@@ -1,0 +1,7 @@
+{
+  "name": "AEONOS",
+  "description": "AEO & GEO optimisation — make your content visible in ChatGPT, Claude, Perplexity, Gemini answers",
+  "mcp_endpoint": "https://aeonos.basechainlabs.com/mcp",
+  "pricing": "0.10 USDC/call via x402",
+  "tools": ["analyze_aeo", "optimize_content", "check_geo_visibility"]
+}
