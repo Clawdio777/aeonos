@@ -2,7 +2,7 @@
   "name": "aeonos-mcp",
   "version": "1.1.1",
   "mcpName": "io.github.Clawdio777/aeonos",
-  "description": "AEONOS — AI Search Visibility Agent. GEO/AEO specialist MCP server. Make any website citable by ChatGPT, Perplexity, Claude, and Google AI Overviews.",
+  "description": "AEONOS — AI Search Visibility Agent. GEO/AEO specialist MCP server. Make any website citable by ChatGPT, Perplexity, Claude, and Google AI Overviews. — LLM SEO and AI citation optimisation for agent-native workflows.",
   "type": "module",
   "bin": {
     "aeonos-mcp": "./mcp-server.mjs"
@@ -22,7 +22,14 @@
     "chatgpt",
     "perplexity",
     "google-ai-overviews",
-    "x402"
+    "x402",
+    "llm-seo",
+    "ai-citation-optimisation",
+    "agent-discoverable-content",
+    "generative-engine-optimisation",
+    "ai-search-optimisation",
+    "perplexity-optimisation",
+    "chatgpt-visibility"
   ],
   "homepage": "https://aeonos.basechainlabs.com",
   "repository": {
