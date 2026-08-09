@@ -109,6 +109,93 @@ export const DIRECTORY_SUBMISSIONS: DirectorySubmission[] = [
   },
 ];
 
+// ── Farcaster casts ────────────────────────────────────────────────────────────
+
+export type FarcasterCastType = "educational" | "data" | "demo";
+
+export interface FarcasterCast {
+  id: number;
+  type: FarcasterCastType;
+  account: string;
+  text: string;
+  tags: string[];
+  channels: string[];
+  replyTo?: string;
+  schedulingNote: string;
+}
+
+export const FARCASTER_CASTS: FarcasterCast[] = [
+  {
+    id: 1,
+    type: "educational",
+    account: "BaseChain Labs",
+    text: `AEO vs GEO vs LLM SEO — what's the difference?
+
+• AEO (Answer Engine Optimisation): structure your content so AI engines extract it as a direct answer to a question
+• GEO (Generative Engine Optimisation): optimise for citation inside AI-generated summaries across ChatGPT, Perplexity & Gemini
+• LLM SEO: the umbrella — entity authority, schema markup, and llms.txt so language models discover and trust your brand
+
+All three matter now. AEONOS audits all three in one call. basechainlabs.com
+
+@bytebot @shoni.eth`,
+    tags: ["@bytebot", "@shoni.eth"],
+    channels: ["/base", "/mcp", "/ai-agents"],
+    replyTo: "https://warpcast.com/bytebot/0x2aeaeb60",
+    schedulingNote: "Post day 1. Reply directly into the bytebot/shoni.eth thread at warpcast.com/bytebot/0x2aeaeb60 to piggyback existing conversation.",
+  },
+  {
+    id: 2,
+    type: "data",
+    account: "BaseChain Labs",
+    text: `ChatGPT just crossed 900M users.
+
+That's 900M people whose first answer to a brand question now comes from an AI — not a search results page.
+
+If your brand isn't cited in those answers, you don't exist to nearly a billion potential customers.
+
+AEONOS shows you exactly where you're invisible and gives you the schema, entity signals, and content fixes to change that. Pay per audit, no subscription. basechainlabs.com`,
+    tags: [],
+    channels: ["/base", "/mcp", "/ai-agents"],
+    schedulingNote: "Post day 3 (48 hours after cast 1). Stand-alone cast — no reply thread needed.",
+  },
+  {
+    id: 3,
+    type: "demo",
+    account: "BaseChain Labs",
+    text: `We ran AEONOS on a real SaaS homepage.
+
+AI visibility score: 34/100
+→ No FAQ schema (P1 fix)
+→ Entity disambiguation score: 41 — AI engines can't identify what the company does
+→ 0 citations in Perplexity across 5 target queries
+→ Competitors cited instead: 4 domains
+
+Generated: missing JSON-LD, llms.txt template, 3 PAA-optimised content blocks.
+
+That's one $0.10 call. basechainlabs.com`,
+    tags: [],
+    channels: ["/base", "/mcp", "/ai-agents"],
+    schedulingNote: "Post day 5 or 7. Attach a screenshot of real AEONOS audit output — redact the client domain if needed. If a short screen-recording is available, attach that instead.",
+  },
+];
+
+// ── Report builders ────────────────────────────────────────────────────────────
+
+export function buildFarcasterCastReport(): string {
+  const castLines = FARCASTER_CASTS.map((c) => {
+    const replyLine = c.replyTo ? `\n  Reply to: ${c.replyTo}` : "";
+    return [
+      `### Cast ${c.id} — ${c.type.toUpperCase()} (${c.account})`,
+      `Channels: ${c.channels.join(" · ")}`,
+      `Scheduling: ${c.schedulingNote}${replyLine}`,
+      "",
+      c.text,
+    ].join("\n");
+  }).join("\n\n---\n\n");
+
+  return ["## AEONOS Farcaster Casts — LLM SEO / AEO authority series", "", castLines].join("\n");
+}
+
 export function buildOutreachReport(): string {
   const targetLines = ROUNDUP_TARGETS.map(
     (t) => `• ${t.outlet} (${t.url}${t.contactPath}) — ${t.notes}`
@@ -135,5 +222,7 @@ export function buildOutreachReport(): string {
     "### Assets to attach",
     "• npm: https://www.npmjs.com/package/aeonos-mcp",
     "• Homepage: https://basechainlabs.com",
+    "",
+    buildFarcasterCastReport(),
   ].join("\n");
 }
