@@ -5,7 +5,20 @@
  * and MCP directory submissions.
  */
 
-export const AEONOS_PITCH = `Subject: Add AEONOS to your 2026 AEO tools roundup
+// ── 150-word product brief ────────────────────────────────────────────────────
+
+export const PRODUCT_BRIEF = `AEONOS (aeonos-mcp) is an agent-native AEO/GEO MCP server that makes any website citable by ChatGPT, Perplexity, Claude, and Google AI Overviews. Unlike SaaS platforms that require dashboard logins and monthly subscriptions, AEONOS is callable by any AI agent or developer via the Model Context Protocol — no accounts, no API keys, no lock-in.
+
+Unique angle: pay-per-call pricing via x402 micropayments ($0.10 USDC on Base blockchain). Every audit call is permissionless and agent-to-agent composable, making AEONOS the first AEO/GEO tool purpose-built for autonomous agent pipelines and the agentic web.
+
+Core capabilities: live citation checks across Perplexity, ChatGPT, Bing/Copilot and Google AI Overviews; JSON-LD schema generation; E-E-A-T scoring; llms.txt templates; and entity disambiguation analysis — all returned in a single MCP tool call.
+
+npm: https://www.npmjs.com/package/aeonos-mcp
+Marketplace: https://agentic.market/?search=aeonos`;
+
+// ── Editor pitch ──────────────────────────────────────────────────────────────
+
+export const AEONOS_PITCH = `Subject: Agent-Native AEO/GEO MCP Server Worth Adding to Your 2026 Roundup
 
 Hi [Editor name],
 
@@ -20,7 +33,7 @@ Key differentiators worth a line in your list:
 • Agent-to-agent compatible: other AI agents can invoke it autonomously
 
 npm package: https://www.npmjs.com/package/aeonos-mcp
-Homepage: https://basechainlabs.com
+Marketplace listing: https://agentic.market/?search=aeonos
 
 Happy to provide a product screenshot, demo, or a brief quote for the piece.
 
@@ -41,14 +54,20 @@ export const ROUNDUP_TARGETS: OutreachTarget[] = [
   {
     outlet: "Scrunch",
     url: "https://scrunch.com",
-    contactPath: "/contact",
-    notes: "AEO/GEO tool coverage — request addition to 2026 AEO tools roundup",
+    contactPath: "/blog",
+    notes: "AEO/GEO tool coverage — request addition to 2026 AEO tools roundup via blog contact/contribute page",
   },
   {
     outlet: "Frase",
     url: "https://frase.io",
     contactPath: "/blog",
-    notes: "Content/SEO audience — pitch as the MCP-native entry missing from their AEO list",
+    notes: "Content/SEO audience — pitch as the MCP-native entry missing from their AEO list via blog contact/contribute page",
+  },
+  {
+    outlet: "Surmado",
+    url: "https://surmado.com",
+    contactPath: "/blog",
+    notes: "AEO/GEO roundup coverage — request inclusion in their AEO tools list via blog contact/contribute page; emphasise agent-native pay-per-call as a distinct category",
   },
   {
     outlet: "Writer",
@@ -209,7 +228,11 @@ export function buildOutreachReport(): string {
   return [
     "## AEONOS Distribution Outreach Package",
     "",
-    "### Blog Editor Pitch (send to Scrunch / Frase / Writer / toloka.ai / k2view)",
+    "### Product Brief (150 words)",
+    "",
+    PRODUCT_BRIEF,
+    "",
+    "### Blog Editor Pitch (send to Scrunch / Frase / Surmado / Writer / toloka.ai / k2view)",
     "",
     AEONOS_PITCH,
     "",
@@ -221,7 +244,7 @@ export function buildOutreachReport(): string {
     "",
     "### Assets to attach",
     "• npm: https://www.npmjs.com/package/aeonos-mcp",
-    "• Homepage: https://basechainlabs.com",
+    "• Marketplace: https://agentic.market/?search=aeonos",
     "",
     buildFarcasterCastReport(),
   ].join("\n");
