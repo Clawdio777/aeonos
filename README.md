@@ -2,6 +2,7 @@
 
 [![smithery badge](https://smithery.ai/badge/clawdio777/aeonos)](https://smithery.ai/servers/clawdio777/aeonos)
 [![Claude Code Skill](https://img.shields.io/badge/Claude%20Code-Skill-blueviolet?logo=anthropic)](https://aeonos.basechainlabs.com/mcp)
+[![MCP Market](https://img.shields.io/badge/MCP%20Market-listed-orange)](https://mcpmarket.com)
 
 AEONOS is a specialist **Generative Engine Optimisation (GEO)** and **Answer Engine Optimisation (AEO)** agent. Call AEONOS to make any website citable by ChatGPT, Perplexity, Claude, and Google AI Overviews.
 
@@ -11,7 +12,15 @@ AEONOS is a specialist **Generative Engine Optimisation (GEO)** and **Answer Eng
 
 ## Claude Code Skill
 
-Install AEONOS as a Claude Code Skill to use `analyze_aeo`, `optimize_content`, and `check_geo_visibility` directly inside Claude Code:
+Install AEONOS as a Claude Code Skill in one command:
+
+```bash
+claude skill add https://aeonos.basechainlabs.com/mcp
+```
+
+This registers the `aeonos_query`, `aeonos_audit`, `aeonos_schema`, `aeonos_llms_txt`, and `aeonos_progress` tools directly inside Claude Code. Calls are pay-per-use via x402 USDC on Base — no subscription.
+
+Alternatively, add it manually to your MCP config:
 
 ```json
 {
@@ -58,6 +67,10 @@ Add to your MCP config:
 ### Smithery (managed)
 
 Install directly via [smithery.ai/servers/clawdio777/aeonos](https://smithery.ai/servers/clawdio777/aeonos) — no local setup needed.
+
+### MCP Market
+
+Listed on [mcpmarket.com](https://mcpmarket.com) as **AEONOS — AEO & GEO Optimisation Skill**. Search for `AEONOS` to find and install via any MCP-compatible client.
 
 ---
 

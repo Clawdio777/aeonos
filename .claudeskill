@@ -1,0 +1,20 @@
+{
+  "name": "AEONOS — AEO & GEO Optimisation Skill",
+  "description": "Optimise content to appear in ChatGPT, Claude, Perplexity, and Gemini answers. Pay-per-call via x402 USDC on Base. No subscription required.",
+  "mcp_server_url": "https://aeonos.basechainlabs.com/mcp",
+  "category": "SEO/Content",
+  "tags": ["AEO", "GEO", "x402", "MCP", "Base", "USDC"],
+  "pricing": {
+    "model": "pay-per-call",
+    "currency": "USDC",
+    "chain": "Base",
+    "protocol": "x402"
+  },
+  "tools": [
+    "aeonos_query",
+    "aeonos_audit",
+    "aeonos_schema",
+    "aeonos_llms_txt",
+    "aeonos_progress"
+  ]
+}
