@@ -989,7 +989,9 @@ export async function runInspectSiteStructure(input: {
 
     if (existing) {
       const history: any[] = existing.audit_history ?? [];
-      const lastAudit = history[history.length - 1];
+      // caller_memory is keyed on caller_id, and one caller can audit many sites — only compare against the same domain
+      const sameDomain = (h: any) => { try { return new URL(h.url).hostname === domain; } catch { return false; } };
+      const lastAudit = [...history].reverse().find(sameDomain);
       if (lastAudit) {
         const resultForDelta: Omit<InspectResult, "deltaVsPreviousAudit"> = {
           overallScore,
