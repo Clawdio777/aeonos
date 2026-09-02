@@ -131,8 +131,10 @@ export const tools: Anthropic.Tool[] = [
       "Pass the domain being audited and 4-6 queries that represent how their target customers " +
       "search in AI engines (e.g. 'best AI SEO tool for small business', 'how to rank in ChatGPT'). " +
       "Pass caller_id when available — results are persisted to citation_history for trend analysis and delta comparison. " +
-      "Returns: per-engine citation score (0-100), per-query results with sources found, competitor URLs " +
-      "that ARE being cited instead, and delta vs previous run when caller_id is provided.",
+      "Perplexity and ChatGPT are sampled several times per query (their answers vary run to run), so the headline " +
+      "per-engine figure is a citation RATE (% of samples that cited the domain) with the sample count n. " +
+      "Returns: per-engine citation rate, per-query results with sources found, competitor URLs " +
+      "that ARE being cited instead, and a delta vs previous run (in percentage points, flagged when within sampling noise) when caller_id is provided.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -368,7 +370,19 @@ async function runStoreCallerMemory(input: Record<string, any>): Promise<string>
 
 // ── Live Citation Checker ──────────────────────────────────────────────────────
 
-type CitRow = { query: string; cited: boolean; competitors: string[]; sources: string[] };
+type CitRow = {
+  query: string;
+  cited: boolean;        // majority of successful samples cited the domain
+  citedSamples: number;
+  samples: number;       // successful samples only — failed/rate-limited calls are dropped, never counted as "not cited"
+  competitors: string[];
+  sources: string[];
+};
+
+// Perplexity/ChatGPT answers are non-deterministic, so one sample per query is noise.
+// LLM engines get CITATION_SAMPLES per query; Google AIO + Bing are SERP snapshots and run once.
+const CITATION_SAMPLES = Math.max(1, Number(process.env.CITATION_SAMPLES) || 5);
+const QUERY_CONCURRENCY = 2; // keeps in-flight LLM calls ≈ 2 × 2 × samples, under Perplexity/OpenAI burst limits
 
 type SentimentResult = {
   query: string;
@@ -412,7 +426,7 @@ ${withText.map((a, i) => `${i + 1}. [${a.engine}] Query: "${a.query}" | Cited: $
   }
 }
 
-function extractCitationResult(domain: string, answer: string, citations: string[]): CitRow & { query: string } {
+function extractCitationResult(domain: string, answer: string, citations: string[]): { cited: boolean; competitors: string[]; sources: string[] } {
   const domainClean = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
   const rx = new RegExp(domainClean.replace(".", "\\."), "i");
   const cited = rx.test(answer) || citations.some((c) => rx.test(c));
@@ -421,8 +435,79 @@ function extractCitationResult(domain: string, answer: string, citations: string
     .map((c) => { try { return new URL(c).hostname; } catch { return c; } })
     .filter((v, i, a) => a.indexOf(v) === i)
     .slice(0, 4);
-  return { query: "", cited, competitors, sources: cited ? citations.filter((c) => rx.test(c)) : [] };
+  return { cited, competitors, sources: cited ? citations.filter((c) => rx.test(c)) : [] };
 }
+
+type LlmRun = { answer: string; citations: string[] };
+type LlmRow = CitRow & { answer: string };
+
+/** Run n samples of one LLM engine for one query and fold them into a single row. Empty responses are failed calls and are dropped. */
+async function sampleLlm(domain: string, query: string, n: number, run: () => Promise<LlmRun>): Promise<LlmRow | null> {
+  const runs = (await Promise.allSettled(Array.from({ length: n }, run)))
+    .filter((r): r is PromiseFulfilledResult<LlmRun> => r.status === "fulfilled" && (r.value.answer.length > 0 || r.value.citations.length > 0))
+    .map((r) => r.value);
+  if (!runs.length) return null;
+  const rows = runs.map((r) => extractCitationResult(domain, r.answer, r.citations));
+  const citedSamples = rows.filter((r) => r.cited).length;
+  return {
+    query,
+    cited: citedSamples * 2 >= runs.length,
+    citedSamples,
+    samples: runs.length,
+    competitors: [...new Set(rows.flatMap((r) => r.competitors))].slice(0, 4),
+    sources: [...new Set(rows.flatMap((r) => r.sources))],
+    answer: runs[0].answer,
+  };
+}
+
+function serpRow(domain: string, query: string, text: string, sources: string[]): CitRow {
+  const r = extractCitationResult(domain, text, sources);
+  return { ...r, query, citedSamples: r.cited ? 1 : 0, samples: 1 };
+}
+
+type Collected = { pplx: LlmRow[]; gpt: LlmRow[]; aio: CitRow[]; bing: CitRow[] };
+
+async function collectCitations(domain: string, queries: string[], samples: number): Promise<Collected> {
+  const pplxKey = process.env.PPLX_API_KEY;
+  const openaiKey = process.env.OPENAI_API_KEY;
+  const hasDFS = !!(process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD);
+  const out: Collected = { pplx: [], gpt: [], aio: [], bing: [] };
+  const ordered = queries.slice(0, 6);
+  const queue = [...ordered];
+
+  const worker = async () => {
+    for (let query = queue.shift(); query !== undefined; query = queue.shift()) {
+      const q = query;
+      const [pplx, gpt, aio, bing] = await Promise.allSettled([
+        pplxKey ? sampleLlm(domain, q, samples, () => queryPplxRaw(q, pplxKey)) : Promise.resolve(null),
+        openaiKey ? sampleLlm(domain, q, samples, () => queryGPTRaw(q, openaiKey)) : Promise.resolve(null),
+        hasDFS ? queryGoogleAIOverview(q) : Promise.resolve({ text: "", sources: [] }),
+        hasDFS ? queryBingResults(q) : Promise.resolve({ text: "", sources: [] }),
+      ]);
+      if (pplx.status === "fulfilled" && pplx.value) out.pplx.push(pplx.value);
+      if (gpt.status === "fulfilled" && gpt.value) out.gpt.push(gpt.value);
+      if (aio.status === "fulfilled" && (aio.value.text || aio.value.sources.length)) out.aio.push(serpRow(domain, q, aio.value.text, aio.value.sources));
+      if (bing.status === "fulfilled" && bing.value.sources.length) out.bing.push(serpRow(domain, q, "", bing.value.sources));
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(QUERY_CONCURRENCY, ordered.length) }, worker));
+
+  const byQuery = (a: CitRow, b: CitRow) => ordered.indexOf(a.query) - ordered.indexOf(b.query);
+  out.pplx.sort(byQuery); out.gpt.sort(byQuery); out.aio.sort(byQuery); out.bing.sort(byQuery);
+  return out;
+}
+
+type EngineStats = { cited: number; total: number; citedSamples: number; samples: number; rate: number };
+
+/** cited/total = queries (majority-cited / checked); rate = % of all samples that cited the domain. */
+function engineStats(rows: CitRow[]): EngineStats {
+  const citedSamples = rows.reduce((a, r) => a + r.citedSamples, 0);
+  const samples = rows.reduce((a, r) => a + r.samples, 0);
+  return { cited: rows.filter((r) => r.cited).length, total: rows.length, citedSamples, samples, rate: samples ? Math.round((citedSamples / samples) * 100) : 0 };
+}
+
+const stripAnswer = ({ query, cited, citedSamples, samples, competitors, sources }: CitRow): CitRow =>
+  ({ query, cited, citedSamples, samples, competitors, sources });
 
 async function queryPplxRaw(question: string, key: string): Promise<{ answer: string; citations: string[] }> {
   try {
@@ -522,43 +607,14 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
   }
   if (!queries?.length) return "queries array is required";
 
-  const pplxResults: (CitRow & { answer: string })[] = [];
-  const gptResults: (CitRow & { answer: string })[] = [];
-  const aioResults: CitRow[] = [];
-  const bingResults: CitRow[] = [];
-
-  await Promise.all(queries.slice(0, 6).map(async (query) => {
-    const [pplx, gpt, aio, bing] = await Promise.allSettled([
-      pplxKey ? queryPplxRaw(query, pplxKey) : Promise.resolve({ answer: "", citations: [] }),
-      openaiKey ? queryGPTRaw(query, openaiKey) : Promise.resolve({ answer: "", citations: [] }),
-      hasDFS ? queryGoogleAIOverview(query) : Promise.resolve({ text: "", sources: [] }),
-      hasDFS ? queryBingResults(query) : Promise.resolve({ text: "", sources: [] }),
-    ]);
-
-    if (pplxKey && pplx.status === "fulfilled") {
-      const r = extractCitationResult(domain, pplx.value.answer, pplx.value.citations);
-      pplxResults.push({ ...r, query, answer: pplx.value.answer });
-    }
-    if (openaiKey && gpt.status === "fulfilled") {
-      const r = extractCitationResult(domain, gpt.value.answer, gpt.value.citations);
-      gptResults.push({ ...r, query, answer: gpt.value.answer });
-    }
-    if (hasDFS && aio.status === "fulfilled" && (aio.value.text || aio.value.sources.length)) {
-      const r = extractCitationResult(domain, aio.value.text, aio.value.sources);
-      aioResults.push({ ...r, query });
-    }
-    if (hasDFS && bing.status === "fulfilled" && bing.value.sources.length) {
-      const r = extractCitationResult(domain, "", bing.value.sources);
-      bingResults.push({ ...r, query });
-    }
-  }));
-
-  const pplxCited = pplxResults.filter((r) => r.cited).length;
-  const gptCited = gptResults.filter((r) => r.cited).length;
-  const aioCited = aioResults.filter((r) => r.cited).length;
-  const bingCited = bingResults.filter((r) => r.cited).length;
+  const { pplx: pplxResults, gpt: gptResults, aio: aioResults, bing: bingResults } =
+    await collectCitations(domain, queries, CITATION_SAMPLES);
+  const pplxStats = engineStats(pplxResults);
+  const gptStats = engineStats(gptResults);
+  const aioStats = engineStats(aioResults);
+  const bingStats = engineStats(bingResults);
   const allCompetitors = [...new Set([...pplxResults, ...gptResults, ...aioResults, ...bingResults].flatMap((r) => r.competitors))].slice(0, 8);
-  const zeroCitations = pplxCited === 0 && gptCited === 0 && aioCited === 0 && bingCited === 0;
+  const zeroCitations = [pplxStats, gptStats, aioStats, bingStats].every((s) => s.citedSamples === 0);
   const timestamp = new Date().toISOString();
 
   // Sentiment analysis — batch all answers with text into one Haiku call
@@ -582,10 +638,10 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
       const snapshot = {
         timestamp,
         domain,
-        perplexity: { cited: pplxCited, total: pplxResults.length, results: pplxResults.map(({ query, cited, competitors, sources }) => ({ query, cited, competitors, sources })) },
-        chatgpt: { cited: gptCited, total: gptResults.length, results: gptResults.map(({ query, cited, competitors, sources }) => ({ query, cited, competitors, sources })) },
-        googleAIO: { cited: aioCited, total: aioResults.length },
-        bing: { cited: bingCited, total: bingResults.length },
+        perplexity: { ...pplxStats, results: pplxResults.map(stripAnswer) },
+        chatgpt: { ...gptStats, results: gptResults.map(stripAnswer) },
+        googleAIO: { ...aioStats },
+        bing: { ...bingStats },
         answers: {
           perplexity: pplxResults.map(({ query, answer }) => ({ query, answer: answer.slice(0, 1000) })),
           chatgpt: gptResults.map(({ query, answer }) => ({ query, answer: answer.slice(0, 1000) })),
@@ -606,31 +662,52 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
       // Build delta section comparing vs most recent previous run for same domain
       const prevRun = [...prevHistory].reverse().find((h) => h.domain === domain);
       if (prevRun) {
-        const pplxDelta = pplxCited - (prevRun.perplexity?.cited ?? 0);
-        const gptDelta = gptCited - (prevRun.chatgpt?.cited ?? 0);
         const prevDate = new Date(prevRun.timestamp).toLocaleDateString("en-AU");
         const fmt = (n: number) => n > 0 ? `+${n}` : `${n}`;
-        deltaSection = `\n\n## DELTA VS PREVIOUS RUN (${prevDate})\n` +
-          `Perplexity: ${fmt(pplxDelta)} citations | ChatGPT: ${fmt(gptDelta)} citations\n` +
-          (pplxDelta === 0 && gptDelta === 0 ? "No change since last check." : pplxDelta + gptDelta > 0 ? "📈 Citation presence improving." : "📉 Citation presence declined.");
+        // Older snapshots have no rate — derive it from queries cited / queries checked (1 sample each).
+        const prevRate = (p: any): number | null =>
+          typeof p?.rate === "number" ? p.rate : p?.total ? Math.round((p.cited / p.total) * 100) : null;
+        // Conservative 95% band for a proportion at this sample size (p = 0.5 worst case): 100/√n pp.
+        const noise = (s: EngineStats) => Math.round(100 / Math.sqrt(Math.max(s.samples, 1)));
+        const engineLine = (label: string, now: EngineStats, prev: any) => {
+          const was = prevRate(prev);
+          if (was === null || !now.samples) return { line: `${label}: no comparable data`, diff: 0, real: false };
+          const diff = now.rate - was;
+          const real = Math.abs(diff) > noise(now);
+          return {
+            line: `${label}: ${fmt(diff)}pp (${was}% → ${now.rate}%, n=${now.samples}${real ? "" : `, within noise ±${noise(now)}pp`})`,
+            diff,
+            real,
+          };
+        };
+        const p = engineLine("Perplexity", pplxStats, prevRun.perplexity);
+        const g = engineLine("ChatGPT", gptStats, prevRun.chatgpt);
+        const net = p.diff + g.diff;
+        const verdict = !p.real && !g.real
+          ? "No change beyond sampling noise since last check."
+          : net > 0 ? "📈 Citation presence improving." : "📉 Citation presence declined.";
+        deltaSection = `\n\n## DELTA VS PREVIOUS RUN (${prevDate})\n${p.line}\n${g.line}\n${verdict}`;
       } else {
         deltaSection = "\n\n## DELTA VS PREVIOUS RUN\nFirst run for this domain — no previous data to compare.";
       }
     } catch {}
   }
 
+  const llmLine = (s: EngineStats) => `${s.rate}% citation rate (${s.citedSamples}/${s.samples} samples across ${s.total} queries)`;
+  const sampleNote = (r: CitRow) => r.samples > 1 ? ` — ${r.citedSamples}/${r.samples} samples cited` : "";
   const lines: string[] = [
     `## Live Citation Check — ${domain}`,
-    pplxKey ? `Perplexity: ${pplxCited}/${pplxResults.length} queries cited` : "",
-    openaiKey ? `ChatGPT: ${gptCited}/${gptResults.length} queries cited` : "",
-    hasDFS && aioResults.length ? `Google AI Overviews: ${aioCited}/${aioResults.length} queries cited` : "",
-    hasDFS && bingResults.length ? `Bing/Copilot (source pool): ${bingCited}/${bingResults.length} queries in index` : "",
+    pplxKey ? `Perplexity: ${llmLine(pplxStats)}` : "",
+    openaiKey ? `ChatGPT: ${llmLine(gptStats)}` : "",
+    hasDFS && aioResults.length ? `Google AI Overviews: ${aioStats.cited}/${aioStats.total} queries cited` : "",
+    hasDFS && bingResults.length ? `Bing/Copilot (source pool): ${bingStats.cited}/${bingStats.total} queries in index` : "",
+    `Method: ${CITATION_SAMPLES} samples per query on Perplexity + ChatGPT (✅ = cited in a majority of samples); a change under ~${Math.round(100 / Math.sqrt(Math.max(pplxStats.samples, gptStats.samples, 1)))}pp between runs is within sampling noise.`,
     "",
     ...pplxResults.map((r) =>
-      `${r.cited ? "✅" : "❌"} [Perplexity] "${r.query}"\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Competitors: ${r.competitors.join(", ") || "none identified"}`}`
+      `${r.cited ? "✅" : "❌"} [Perplexity] "${r.query}"${sampleNote(r)}\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Competitors: ${r.competitors.join(", ") || "none identified"}`}`
     ),
     ...gptResults.map((r) =>
-      `${r.cited ? "✅" : "❌"} [ChatGPT] "${r.query}"\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Competitors: ${r.competitors.join(", ") || "none identified"}`}`
+      `${r.cited ? "✅" : "❌"} [ChatGPT] "${r.query}"${sampleNote(r)}\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Competitors: ${r.competitors.join(", ") || "none identified"}`}`
     ),
     ...aioResults.map((r) =>
       `${r.cited ? "✅" : "❌"} [Google AI Overview] "${r.query}"\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Competitors: ${r.competitors.join(", ") || "none identified"}`}`
@@ -643,7 +720,7 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
     "",
     zeroCitations
       ? `⚠️ ${domain} has ZERO citations across all four AI engines. This is the #1 priority finding in this audit.`
-      : `Citation presence: Perplexity ${pplxCited}/${pplxResults.length} | ChatGPT ${gptCited}/${gptResults.length} | Google AI Overviews ${aioCited}/${aioResults.length || "n/a"} | Bing/Copilot ${bingCited}/${bingResults.length || "n/a"}.`,
+      : `Citation presence: Perplexity ${pplxStats.rate}% (n=${pplxStats.samples}) | ChatGPT ${gptStats.rate}% (n=${gptStats.samples}) | Google AI Overviews ${aioStats.cited}/${aioStats.total || "n/a"} | Bing/Copilot ${bingStats.cited}/${bingStats.total || "n/a"}.`,
     sentimentResults.length
       ? `\n## Sentiment Analysis\n` + sentimentResults.map((s) => {
           const icon = s.sentiment === "positive" ? "🟢" : s.sentiment === "negative" ? "🔴" : "🟡";
@@ -660,48 +737,18 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
 
 export type CitationSnapshot = {
   domain: string;
-  perplexity: { cited: number; total: number; results: CitRow[] };
-  chatgpt: { cited: number; total: number; results: CitRow[] };
-  googleAIO: { cited: number; total: number; results: CitRow[] };
-  bing: { cited: number; total: number; results: CitRow[] };
+  perplexity: EngineStats & { results: CitRow[] };
+  chatgpt: EngineStats & { results: CitRow[] };
+  googleAIO: EngineStats & { results: CitRow[] };
+  bing: EngineStats & { results: CitRow[] };
   competitors: string[];
   sentiment: SentimentResult[];
 };
 
+/** Single-sample check — share-of-voice runs 2–5 brands in parallel, so sampling is kept at 1 to bound cost. */
 export async function checkCitationsRaw(domain: string, queries: string[]): Promise<CitationSnapshot> {
-  const pplxKey = process.env.PPLX_API_KEY;
-  const openaiKey = process.env.OPENAI_API_KEY;
-  const hasDFS = !!(process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD);
-
-  const pplxResults: (CitRow & { answer: string })[] = [];
-  const gptResults: (CitRow & { answer: string })[] = [];
-  const aioResults: CitRow[] = [];
-  const bingResults: CitRow[] = [];
-
-  await Promise.all(queries.slice(0, 6).map(async (query) => {
-    const [pplx, gpt, aio, bing] = await Promise.allSettled([
-      pplxKey ? queryPplxRaw(query, pplxKey) : Promise.resolve({ answer: "", citations: [] }),
-      openaiKey ? queryGPTRaw(query, openaiKey) : Promise.resolve({ answer: "", citations: [] }),
-      hasDFS ? queryGoogleAIOverview(query) : Promise.resolve({ text: "", sources: [] }),
-      hasDFS ? queryBingResults(query) : Promise.resolve({ text: "", sources: [] }),
-    ]);
-    if (pplxKey && pplx.status === "fulfilled") {
-      const r = extractCitationResult(domain, pplx.value.answer, pplx.value.citations);
-      pplxResults.push({ ...r, query, answer: pplx.value.answer });
-    }
-    if (openaiKey && gpt.status === "fulfilled") {
-      const r = extractCitationResult(domain, gpt.value.answer, gpt.value.citations);
-      gptResults.push({ ...r, query, answer: gpt.value.answer });
-    }
-    if (hasDFS && aio.status === "fulfilled" && (aio.value.text || aio.value.sources.length)) {
-      const r = extractCitationResult(domain, aio.value.text, aio.value.sources);
-      aioResults.push({ ...r, query });
-    }
-    if (hasDFS && bing.status === "fulfilled" && bing.value.sources.length) {
-      const r = extractCitationResult(domain, "", bing.value.sources);
-      bingResults.push({ ...r, query });
-    }
-  }));
+  const { pplx: pplxResults, gpt: gptResults, aio: aioResults, bing: bingResults } =
+    await collectCitations(domain, queries, 1);
 
   const allCompetitors = [
     ...new Set([...pplxResults, ...gptResults, ...aioResults, ...bingResults].flatMap((r) => r.competitors)),
@@ -715,10 +762,10 @@ export async function checkCitationsRaw(domain: string, queries: string[]): Prom
 
   return {
     domain,
-    perplexity: { cited: pplxResults.filter((r) => r.cited).length, total: pplxResults.length, results: pplxResults.map(({ query, cited, competitors, sources }) => ({ query, cited, competitors, sources })) },
-    chatgpt: { cited: gptResults.filter((r) => r.cited).length, total: gptResults.length, results: gptResults.map(({ query, cited, competitors, sources }) => ({ query, cited, competitors, sources })) },
-    googleAIO: { cited: aioResults.filter((r) => r.cited).length, total: aioResults.length, results: aioResults.map(({ query, cited, competitors, sources }) => ({ query, cited, competitors, sources })) },
-    bing: { cited: bingResults.filter((r) => r.cited).length, total: bingResults.length, results: bingResults.map(({ query, cited, competitors, sources }) => ({ query, cited, competitors, sources })) },
+    perplexity: { ...engineStats(pplxResults), results: pplxResults.map(stripAnswer) },
+    chatgpt: { ...engineStats(gptResults), results: gptResults.map(stripAnswer) },
+    googleAIO: { ...engineStats(aioResults), results: aioResults },
+    bing: { ...engineStats(bingResults), results: bingResults },
     competitors: allCompetitors,
     sentiment,
   };
