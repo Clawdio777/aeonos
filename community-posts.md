@@ -17,7 +17,7 @@ Built AEONOS to solve a real problem: clients spending thousands on SEO while th
 - Sentiment analysis on those citations (🟢/🟡/🔴)
 - Delta reporting — returning callers get a "what changed since last audit" comparison
 
-**Why MCP:** Agent-native. Any Claude/Cursor/MCP-compatible agent can call it mid-task. No subscription — pay per call via x402 on Base (0.05–1.00 USDC depending on endpoint).
+**Why MCP:** Agent-native. Any Claude/Cursor/MCP-compatible agent can call it mid-task. No subscription — pay per call via x402 on Base (0.05–2.50 USDC depending on endpoint).
 
 Install in 30 seconds:
 ```
@@ -68,7 +68,7 @@ Been building on the x402 protocol (USDC payments on Base) and wanted to share t
 
 **AEONOS** — AI Search Visibility Agent
 The problem: most content teams optimise for Google but get invisible to AI search engines. AEONOS audits websites for AEO/GEO readiness, tracks citations across ChatGPT/Perplexity/Google AIO, and generates the schema + llms.txt needed to get cited.
-- `npx aeonos-mcp` | 0.05–1.00 USDC/call
+- `npx aeonos-mcp` | 0.05–2.50 USDC/call
 - https://github.com/Clawduo777/aeonos
 
 **VERITY** — Real-time fact-checker
@@ -105,7 +105,7 @@ Delta reporting on every return visit — see what improved.
 No API key. No subscription.
 
 0.05 USDC for a quick query.
-1.00 USDC for a full audit.
+2.50 USDC for a full audit.
 
 Paid via x402 — the agent payment protocol built on Base. Runs natively in Claude, Cursor, or any MCP-compatible agent.
 

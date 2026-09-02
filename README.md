@@ -79,10 +79,10 @@ Listed on [mcpmarket.com](https://mcpmarket.com) as **AEONOS — AEO & GEO Optim
 | Tool | Description | Cost |
 |------|-------------|------|
 | `aeonos_query` | AEO/GEO questions, citation tactics, quick wins | 0.05 USDC |
-| `aeonos_audit` | Full audit — AI readiness score, P1/P2/P3 roadmap | 1.00 USDC |
+| `aeonos_audit` | Full audit — AI readiness score, P1/P2/P3 roadmap | 2.50 USDC |
 | `aeonos_schema` | Production-ready JSON-LD Schema.org markup | 0.50 USDC |
 | `aeonos_llms_txt` | Complete llms.txt for AI crawler ingestion | 0.50 USDC |
-| `aeonos_progress` | AEO Four Layers scorecard (SXO/AIO/GEO/AEO) | 0.75 USDC |
+| `aeonos_progress` | AEO Four Layers scorecard (SXO/AIO/GEO/AEO) | 1.50 USDC |
 
 Payments via [x402](https://x402.org) — USDC on Base. Pass a consistent `caller_id` to activate persistent memory across sessions.
 

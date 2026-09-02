@@ -30,7 +30,7 @@
       "name": "Full AEO/GEO Audit",
       "description": "Call for a comprehensive AI visibility audit of any website. Input: URL or business description. Output: overall AI readiness score (0–100), four-layer analysis (on-page content, technical SEO, authority signals, AI-specific signals), and a prioritised P1/P2/P3 implementation roadmap in structured markdown. Use before content creation workflows to identify gaps.",
       "endpoint": "https://aeonos.basechainlabs.com/api/audit",
-      "price": "1.00 USDC",
+      "price": "2.50 USDC",
       "inputModes": ["text"],
       "outputModes": ["text"],
       "tags": ["audit", "aeo", "geo", "ai-readiness", "seo-audit", "content-strategy"],
@@ -72,7 +72,7 @@
       "name": "AEO Four Layers Progress Report",
       "description": "Call to score a website across the Four Layers framework: SXO (search experience), AIO (AI optimisation), GEO (generative engine), AEO (answer engine). Input: URL or business description. Output: per-layer score (0–100), what's working, what's not, and the next 3 highest-impact actions in structured markdown. Uses persistent memory to personalise report if prior audit data exists for the caller.",
       "endpoint": "https://aeonos.basechainlabs.com/api/progress",
-      "price": "0.75 USDC",
+      "price": "1.50 USDC",
       "inputModes": ["text"],
       "outputModes": ["text"],
       "tags": ["aeo", "geo", "progress-report", "four-layers", "ai-visibility", "scoring"],
@@ -84,10 +84,10 @@
   ],
   "pricing": {
     "quick_query": "0.05 USDC",
-    "full_audit":  "1.00 USDC",
+    "full_audit":  "2.50 USDC",
     "schema":      "0.50 USDC",
     "llms_txt":    "0.50 USDC",
-    "progress":    "0.75 USDC"
+    "progress":    "1.50 USDC"
   },
   "useCases": [
     "Content generation agents call AEONOS before publishing to ensure AI engine citation",

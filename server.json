@@ -18,7 +18,7 @@
       "environmentVariables": [
         {
           "name": "AEONOS_PRIVATE_KEY",
-          "description": "Base wallet private key (0x...) — used to sign x402 payments in USDC on Base. Per-call: 0.05 (query), 0.50 (schema/llms-txt), 0.75 (progress), 1.00 USDC (audit).",
+          "description": "Base wallet private key (0x...) — used to sign x402 payments in USDC on Base. Per-call: 0.05 (query), 0.50 (schema/llms-txt), 1.50 (progress), 2.50 USDC (audit).",
           "isRequired": true,
           "format": "string",
           "isSecret": true

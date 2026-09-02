@@ -61,7 +61,7 @@ const OFFERING_PROMPTS = {
 // Sweep: split USDC earnings — top up Pemba buyer wallet first, rest to personal wallet
 const SWEEP_DEST      = "0x282d873b3737144b45c507320c12f22edfd51fe3"; // personal/business wallet
 const PEMBA_WALLET    = "0x1E45B323B94Bfe39eac03E27431A6866193AcC1B"; // Pemba buyer wallet (pays for AEONOS calls)
-const PEMBA_TARGET    = 5.00;  // USDC to keep in Pemba wallet (~5 wks of audits: 4×$0.75 + 1×$1.00)
+const PEMBA_TARGET    = 10.00; // USDC to keep in Pemba wallet (~5 wks of audits: 4×$1.50 + 1×$2.50)
 const SWEEP_THRESHOLD = 10.00; // USDC — only sweep if AEONOS balance ≥ this
 const USDC_CONTRACT   = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"; // USDC on Base
 const BASE_RPC        = "https://mainnet.base.org";
