@@ -1,0 +1,11 @@
+{
+  "name": "aeonos",
+  "description": "AEO and GEO optimisation — analyse and improve content for AI answer engine visibility across ChatGPT, Claude, Perplexity, Gemini",
+  "entrypoint": "https://aeonos.basechainlabs.com",
+  "payment": {
+    "protocol": "x402",
+    "price": "0.10",
+    "currency": "USDC",
+    "chain": "base"
+  }
+}

@@ -355,21 +355,22 @@
         "priority": "P1 — foundational understanding required before any tactics",
         "applies_to": ["all businesses", "all content types"]
       },
-      "sources": ["Emilia Möller — 2026 visibility framework", "Cloudflare AI research", "BrightEdge GEO study 2026", "Pemba AI reports system (implements Möller's Four Layers)"]
+      "sources": ["Cloudflare AI research", "BrightEdge GEO study 2026", "Pemba AI reports system"],
+      "last_updated": "2026-08-27"
     },
 
     {
       "category": "aeo_fundamentals",
       "query_pattern": "AI readiness test is this site ready to be cited",
       "content": {
-        "title": "Emilia Möller's 5-Part AI Inclusion Check",
-        "summary": "A five-pillar test for whether a site is ready to be cited by AI answer engines. Each pillar has a score (0-100). A site must pass all five to reliably appear in AI-generated answers.",
-        "pillars": [
+        "title": "AEONOS Site-Readiness Checks: What inspectSiteStructure Actually Measures",
+        "summary": "Five signal groups AEONOS mechanically checks on every audited page to determine whether it's ready to be cited by AI answer engines. Each maps to a real function in AEONOS's inspectSiteStructure tool, not a theoretical framework — every score below is computed directly from the crawled page.",
+        "signals": [
           {
             "id": 1,
             "name": "Findable",
             "description": "Crawlable, indexed, accessible. Can AI bots reach and index the content?",
-            "how_to_score": "Check robots.txt allows GPTBot, PerplexityBot, ClaudeBot. Confirm pages are indexed in Google Search Console. No noindex tags on key pages. Sitemap.xml exists and is submitted.",
+            "how_it_is_checked": "AEONOS's llms.txt + robots.txt check fetches robots.txt and flags any Disallow rule targeting GPTBot, PerplexityBot, ClaudeBot, or other AI crawlers, and checks whether /llms.txt exists.",
             "score_blockers": ["robots.txt blocking AI crawlers", "noindex on service/product pages", "no sitemap", "broken links to key pages"],
             "target": 100
           },
@@ -377,16 +378,16 @@
             "id": 2,
             "name": "Understandable",
             "description": "Clear language, logical structure. Can AI parse the content and understand what the page is about?",
-            "how_to_score": "Headings form a logical hierarchy (H1 > H2 > H3). No jargon without explanation. Content directly addresses a clear topic. Language is unambiguous.",
+            "how_it_is_checked": "AEONOS's PAA/featured-snippet function counts question-format H2/H3 headings and checks for a real H2 hierarchy; the conversational-query function checks the opening 150 words for a clear 'what this is' statement.",
             "score_blockers": ["marketing slogans as headings ('COLDBREW.ANYWHERE.' instead of 'What is freeze-dried cold brew?')", "no H1", "heading hierarchy is broken", "content is purely promotional with no informational value"],
             "target": 90,
-            "key_signal": "Question-based headings (H2/H3) are the #1 AEO signal per Emilia Möller. Rewrite all service/product headings as the exact questions customers ask in ChatGPT and Google."
+            "key_signal": "Question-based headings (H2/H3) are a high-impact, well-established AEO/PAA signal. Rewrite service/product headings as the exact questions customers ask in ChatGPT and Google."
           },
           {
             "id": 3,
             "name": "Trustworthy",
             "description": "Authority signals, schema markup. Does the site demonstrate credibility that AI systems can verify?",
-            "how_to_score": "Organization or LocalBusiness schema present. Business name, address, phone in plain text (not just images). Reviews visible on-page. HTTPS. Author attribution on content.",
+            "how_it_is_checked": "AEONOS's E-E-A-T assessment function checks for author attribution, an /about page, visible contact info, external authority links, privacy/terms, and a visible last-modified date, scoring 0-100.",
             "score_blockers": ["no schema markup", "no business contact info in text", "no reviews or social proof", "HTTP only"],
             "implementation": [
               "Add Organization schema with name, url, logo, contactPoint, sameAs (social profiles)",
@@ -401,7 +402,7 @@
             "id": 4,
             "name": "Extractable",
             "description": "Sections that stand alone as citations. Can AI pull a paragraph and use it as a complete answer without needing more context?",
-            "how_to_score": "Each section/paragraph makes sense in isolation. Answers are complete (40-60 words). No 'see above' or 'as mentioned' references. FAQ format used where appropriate.",
+            "how_it_is_checked": "AEONOS's schema extraction + gap analysis function parses JSON-LD/microdata/RDFa, validates required properties, and flags missing FAQPage/Article/Speakable schema with ready-to-paste JSON-LD templates generated from the page's own headings.",
             "score_blockers": ["paragraphs that reference earlier sections", "answers that don't include the question context", "no FAQ schema", "content that only makes sense with surrounding context"],
             "implementation": [
               "Add FAQPage schema markup — each answer must be a complete standalone response",
@@ -413,9 +414,9 @@
           },
           {
             "id": 5,
-            "name": "Reusable",
-            "description": "Format matches how AI constructs answers. Is the content structured in the format AI tools actually use when synthesising responses?",
-            "how_to_score": "Content uses bullet points, numbered lists, concise paragraphs. Definitions are clear. Comparisons are structured. Processes are step-by-step. Tables for comparisons.",
+            "name": "Reusable / Entity-Clear",
+            "description": "Format matches how AI constructs answers, and the entity itself (who/what this business is) is unambiguous. Is the content structured in the format AI tools actually use when synthesising responses?",
+            "how_it_is_checked": "AEONOS's entity disambiguation function checks name consistency across title/H1/schema, whether the ICP and outcome are stated in the opening copy, and whether an industry category is established; combined with the schema and PAA checks above for overall structure.",
             "score_blockers": ["dense unbroken paragraphs", "no list formatting", "no step-by-step structure for process content", "comparisons buried in prose rather than formatted as tables"],
             "implementation": [
               "Structure HowTo content as numbered steps with clear actions",
@@ -468,7 +469,8 @@
         "priority": "P1 — run this checklist before any other AEO work",
         "applies_to": ["all websites", "all business types"]
       },
-      "sources": ["Emilia Möller — AI Inclusion Check / AI readiness test", "Pemba AI reports system (implements Möller's 5-Part check)", "Pemba visibility checklist (20-item implementation)"]
+      "sources": ["AEONOS inspectSiteStructure tool (schema, E-E-A-T, freshness, PAA, conversational, entity scoring)", "Google Search Central", "Schema.org spec", "Pemba visibility checklist (20-item implementation)"],
+      "last_updated": "2026-08-27"
     },
 
     {
@@ -594,12 +596,12 @@
       "category": "aeo_fundamentals",
       "query_pattern": "question-based headings AEO signal",
       "content": {
-        "title": "The #1 AEO Signal: Question-Based Headings (Emilia Möller)",
+        "title": "Question-Based Headings: A High-Impact AEO/PAA Signal",
         "summary": "The single highest-impact AEO change on any page: rewrite H2/H3 headings as the exact questions customers type into ChatGPT and Google. AI systems match user queries to content by looking for literal question phrasing in headings.",
         "the_signal": {
           "rule": "Every H2 and H3 heading on a service, product, or blog page should be phrased as a question — the exact question a customer would type into ChatGPT, Perplexity, or Google.",
           "why": "AI search systems are built on question-answer matching. When a user asks 'What does an osteopath treat?', the AI looks for pages with that exact phrasing as a heading. A page with the heading 'Our Services' gets skipped. A page with 'What conditions does osteopathy treat?' gets cited.",
-          "source": "Emilia Möller — cited in Pemba AI audit system as '#1 AEO signal'"
+          "source": "Rated '#1 AEO signal' by Pemba AI audit system's internal impact analysis"
         },
         "before_after_examples": [
           {
@@ -655,7 +657,8 @@
         "priority": "P1 — do this before any other content changes",
         "applies_to": ["service businesses", "SaaS", "ecommerce", "local businesses", "any site with service/product pages"]
       },
-      "sources": ["Emilia Möller — #1 AEO signal", "Pemba AI audit system (80% AI impact rating)", "Pemba visibility checklist AEO section"]
+      "sources": ["Pemba AI audit system (80% AI impact rating)", "Pemba visibility checklist AEO section"],
+      "last_updated": "2026-08-27"
     },
 
     {
@@ -715,6 +718,95 @@
         "applies_to": ["B2B SaaS", "AI tools", "agency software", "white-label products"]
       },
       "sources": ["Sailor campaign data April-May 2026", "GSC data via Pemba DataForSEO integration"]
+    },
+
+    {
+      "category": "keyword_research",
+      "query_pattern": "keyword prioritization money pages first sweet spot",
+      "content": {
+        "title": "Keyword Prioritization: The Sweet Spot Framework + Money-Pages-First Sequencing",
+        "summary": "Score every keyword candidate against four attributes before committing content resources, then sequence content creation money-pages-first rather than informational-first.",
+        "sweet_spot_attributes": [
+          {"attribute": "Demand", "question": "Is anyone actually searching this?"},
+          {"attribute": "Fit", "question": "Where does it sit in the funnel, and is it relevant to what's actually offered?"},
+          {"attribute": "Intent", "question": "Can the content satisfy what the searcher actually wants, including format (some SERPs demand video, not text)?"},
+          {"attribute": "Difficulty", "question": "Is it realistic to rank given current site authority?"}
+        ],
+        "prioritization_sequence": [
+          "1. Build converting pages first — product/service/pricing pages targeting transactional and commercial keywords. This is what the business is actually built on. Common failure: writing lots of informational content before any money page exists, so there's nowhere for traffic to convert.",
+          "2. Pick ONE topical cluster connected to a money page and build the full funnel for it (money page → commercial comparison content → top-of-funnel educational content), all internally linked back down toward the money page.",
+          "3. Finish one cluster before starting the next — spreading thin across many clusters at once slows down topical authority and delays ranking results."
+        ],
+        "process": "Ideation (Search Console query data, Google autosuggest, People Also Ask, subreddit language mining, LLM-assisted content-gap analysis) → Validation (check volume/difficulty/intent per idea before committing) → Clustering (group keywords Google treats as topically equivalent).",
+        "long_tail_note": "Long-tail phrases carry lower individual volume but clearer intent and much lower competition — the right starting point for a newer/lower-authority site, building toward competitive head terms over time.",
+        "priority": "P1 — must complete before creating any content",
+        "applies_to": ["all businesses", "all stages"]
+      },
+      "sources": ["SEO & AI SEO Course 2026 (tool-neutral transcript, cross-checked against independent market research)", "Pemba campaign data 2026"],
+      "last_updated": "2026-08-27"
+    },
+
+    {
+      "category": "on_page_optimisation",
+      "query_pattern": "on-page SEO checklist 2026",
+      "content": {
+        "title": "On-Page SEO Checklist: Full Element List (2026)",
+        "summary": "The complete set of on-page elements to check on every page, beyond title/meta/H1 — covers URL structure, heading hierarchy, internal linking, and image optimisation.",
+        "checklist": [
+          {"element": "Title tag", "rule": "Include the target keyword, under 60 characters, compelling enough to click."},
+          {"element": "H1", "rule": "Mirrors the title tag, one per page."},
+          {"element": "Heading hierarchy", "rule": "H2s = main sections, H3s = subsections, keywords used naturally. This hierarchy is how both search engines and LLMs parse page structure and depth."},
+          {"element": "URL", "rule": "Short, descriptive, includes the keyword — not an auto-generated string of characters."},
+          {"element": "Meta description", "rule": "150-160 characters, not a direct ranking factor but affects click-through — write it like ad copy."},
+          {"element": "Internal linking", "rule": "Contextual links inside body copy connecting a page to its cluster and back to money pages. One of the best effort-to-value tactics in SEO — don't skip it."},
+          {"element": "Image optimisation", "rule": "Descriptive file names, specific (not generic/repeated) alt text, compressed file sizes (WebP recommended)."}
+        ],
+        "priority": "P1",
+        "applies_to": ["all pages"]
+      },
+      "sources": ["SEO & AI SEO Course 2026 (tool-neutral transcript)"],
+      "last_updated": "2026-08-27"
+    },
+
+    {
+      "category": "backlink_strategy",
+      "query_pattern": "link building tactics effort to value 2026",
+      "content": {
+        "title": "Link Building: Three Tactics Ranked by Effort-to-Value (2026)",
+        "summary": "Link building is the hardest, slowest part of SEO with no real shortcuts that don't risk penalty. Three practical tactics for a small operator, roughly in order of effort-to-value.",
+        "tactics": [
+          {"rank": 1, "name": "Be the source", "detail": "Original data, original analysis, or original resources that journalists/bloggers want to cite. Every business sits on some knowledge others would reference — most just never publish it."},
+          {"rank": 2, "name": "Journalist query platforms", "detail": "Sign up for query platforms (successor tools to the old 'HARO' model), respond to journalist requests for expert quotes/sources with genuine expertise, get a citation/link when published. Low effort (~15 min/day), numbers-game conversion rate — the most accessible tactic for beginners."},
+          {"rank": 3, "name": "Linkable assets", "detail": "Free tools, calculators, templates, or genuinely comprehensive guides that become reference material other sites want to link to instead of re-explaining the same thing. A narrow, cheap-to-build interactive tool tied to a real (even modest-volume) keyword can become a natural backlink magnet."}
+        ],
+        "recommended_sequencing": "For a smaller/newer site: build out 10-15 solid content pieces first, then start with journalist-query outreach (cheapest, fastest to start) before investing heavily in the other tactics — links compound over time once there's something worth linking to.",
+        "priority": "P2",
+        "applies_to": ["SaaS", "digital products", "service businesses"]
+      },
+      "sources": ["SEO & AI SEO Course 2026 (tool-neutral transcript)"],
+      "last_updated": "2026-08-27"
+    },
+
+    {
+      "category": "aeo_fundamentals",
+      "query_pattern": "how does AI search actually work what drives AI citation",
+      "content": {
+        "title": "AI Search Fundamentals: What Actually Drives AI Citation (2026)",
+        "summary": "AI search engines are built on top of traditional search infrastructure, not a replacement for it. GEO is not a separate discipline from SEO — it's what happens when SEO fundamentals are done well and pointed at AI-readable structure.",
+        "core_thesis": "ChatGPT's web search runs on Bing's index, Perplexity runs its own crawler but still leans on Bing underneath, and even sites with their own index are crawling the same pages that already rank in traditional search. Practical implication: if a site doesn't show up in Google/Bing, it's very unlikely to show up in AI assistant answers either.",
+        "measurement_blind_spot": "Google Search Console cannot see traffic that originated from ChatGPT, Perplexity, or similar AI assistants — that referral data isn't exposed by the AI vendors. Actual AI-driven traffic can't be directly measured the way Google traffic can. Workaround: monitor whether a brand shows up when relevant questions are asked directly of AI assistants (run the query in an incognito/fresh session to avoid personalisation skewing results), tracked over time — not 'how many people came from there.'",
+        "what_drives_citation": [
+          "Comprehensive, clearly-structured content that directly answers specific questions — LLMs pull cleanly from content organised this way.",
+          "Topical authority via full cluster coverage (definition + how-to + comparison + deep-dive on a subject), not single isolated pages.",
+          "Earning citations from other authoritative sources — AI models weight sources that other trusted sites already reference; backlinks function as a trust signal to AI systems too, not just to Google. AI assistants especially favour 'best-of' roundup articles.",
+          "Identifying and closing 'mention gaps' — which buyer-relevant queries competitors are already being AI-cited for that you aren't — and turning that gap list directly into an outreach/content priority list.",
+          "Checking AI visibility on a recurring basis, since AI-assistant recommendations shift meaningfully over time. This needs ongoing monitoring, not a one-off audit."
+        ],
+        "priority": "P1 — foundational understanding required before any AI-search tactics",
+        "applies_to": ["all businesses", "all content types"]
+      },
+      "sources": ["SEO & AI SEO Course 2026 (tool-neutral transcript, cross-checked against independent market research)"],
+      "last_updated": "2026-08-27"
     }
 
   ]
