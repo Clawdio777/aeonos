@@ -16,7 +16,7 @@
     },
     {
       "name": "aeonos_audit",
-      "description": "Full AEO/GEO audit. Returns AI readiness score (0–100), four-layer analysis, and P1/P2/P3 action roadmap. 1.00 USDC per call."
+      "description": "Full AEO/GEO audit. Returns AI readiness score (0–100), four-layer analysis, and P1/P2/P3 action roadmap. 2.50 USDC per call."
     },
     {
       "name": "aeonos_schema",
@@ -28,7 +28,7 @@
     },
     {
       "name": "aeonos_progress",
-      "description": "Score a website on the AEO Four Layers framework (SXO/AIO/GEO/AEO). Returns per-layer scores and next 3 actions. 0.75 USDC per call."
+      "description": "Score a website on the AEO Four Layers framework (SXO/AIO/GEO/AEO). Returns per-layer scores and next 3 actions. 1.50 USDC per call."
     }
   ],
   "prompts": [

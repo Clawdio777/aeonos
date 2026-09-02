@@ -186,7 +186,7 @@ async function handleSync(
   paymentHeader: string | undefined,
   queryCount: number
 ) {
-  const result = await runAgent({ query, caller_id });
+  const result = await runAgent({ query, caller_id, citationSamples: 1 });
   await logQuery(caller_id, query, result, paymentHeader);
 
   const body = {
@@ -237,7 +237,7 @@ async function handleAsync(
 
   // Run agent in background (Vercel waits for the function to complete even after response)
   try {
-    const result = await runAgent({ query, caller_id });
+    const result = await runAgent({ query, caller_id, citationSamples: 1 });
     await logQuery(caller_id, query, result, paymentHeader);
     await db.from("tasks").update({
       status: "completed",
@@ -309,7 +309,7 @@ async function handleStream(
     // For now: send working heartbeats, then final result
     send({ status: "working", progress: "Querying live AEO data sources..." });
 
-    const result = await runAgent({ query, caller_id });
+    const result = await runAgent({ query, caller_id, citationSamples: 1 });
     await logQuery(caller_id, query, result, paymentHeader);
 
     for (const tool of result.tool_calls_made) {

@@ -13,7 +13,7 @@ description: |
   across sessions. No re-sending context on repeat calls.
 
   Payments: x402 v2, USDC on Base. Configure AEONOS_PRIVATE_KEY with a Base wallet
-  holding USDC. Costs: 0.05–1.00 USDC per call depending on tool.
+  holding USDC. Costs: 0.05–2.50 USDC per call depending on tool.
 
 version: "1.1.0"
 license: MIT

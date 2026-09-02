@@ -99,6 +99,8 @@ export interface AgentQuery {
   query: string;
   caller_id: string;
   session_id?: string;
+  /** Samples per query for checkLiveCitations. Cheap endpoints pass 1; audit/progress use the default (5). */
+  citationSamples?: number;
 }
 
 export interface AgentResponse {
@@ -158,7 +160,9 @@ export async function runAgent(input: AgentQuery): Promise<AgentResponse> {
         toolUseBlocks.map(async (block) => {
           if (block.type !== "tool_use") return null;
           toolCallsMade.push(block.name);
-          const result = await executeTool(block.name, block.input as Record<string, any>);
+          const toolInput = block.input as Record<string, any>;
+          if (block.name === "checkLiveCitations" && input.citationSamples) toolInput.samples = input.citationSamples;
+          const result = await executeTool(block.name, toolInput);
           return {
             type: "tool_result" as const,
             tool_use_id: block.id,

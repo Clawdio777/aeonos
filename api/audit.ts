@@ -1,5 +1,5 @@
 /**
- * POST /api/audit — Full AEO/GEO strategy + audit · 1.00 USDC
+ * POST /api/audit — Full AEO/GEO strategy + audit · 2.50 USDC
  *
  * Comprehensive audit covering all four layers: on-page content,
  * technical SEO, authority signals, and AI-specific optimisations.
@@ -11,10 +11,10 @@ import { createClient } from "@supabase/supabase-js";
 import { requirePayment, buildBazaarExtension } from "./_x402-gate.js";
 import { runAgent } from "../src/agent.js";
 
-const PRICE_USDC = 1.00;
+const PRICE_USDC = 2.50;
 const BASE_URL   = () => process.env.AGENT_BASE_URL || "https://aeonos.basechainlabs.com";
 const RESOURCE_URL  = () => `${BASE_URL()}/api/audit`;
-const RESOURCE_DESC = "Full AI search visibility audit — AEO/GEO/SEO 4-layer strategy, AI inclusion check, schema gaps, llms.txt review, P1/P2/P3 roadmap. 1.00 USDC.";
+const RESOURCE_DESC = "Full AI search visibility audit — AEO/GEO/SEO 4-layer strategy, AI inclusion check, schema gaps, llms.txt review, P1/P2/P3 roadmap. 2.50 USDC.";
 
 const BAZAAR = buildBazaarExtension({
   serviceName:      "AEONOS — Full Audit",

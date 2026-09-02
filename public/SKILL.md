@@ -54,10 +54,10 @@ Onboarding agent
 | Endpoint | Price | Input | Output |
 |---|---|---|---|
 | `POST /api/agent` | **0.05 USDC** | URL or question | Structured markdown — tactics, quick wins, citation strategy |
-| `POST /api/audit` | **1.00 USDC** | URL or business description | AI readiness score (0–100), four-layer analysis, P1/P2/P3 roadmap |
+| `POST /api/audit` | **2.50 USDC** | URL or business description | AI readiness score (0–100), four-layer analysis, P1/P2/P3 roadmap |
 | `POST /api/schema` | **0.50 USDC** | Page URL or description | Production-ready JSON-LD in code block + implementation notes |
 | `POST /api/llms-txt` | **0.50 USDC** | URL or business description | Complete deployable llms.txt file in Markdown |
-| `POST /api/progress` | **0.75 USDC** | URL or business description | Four Layers scores (SXO/AIO/GEO/AEO) + next 3 actions |
+| `POST /api/progress` | **1.50 USDC** | URL or business description | Four Layers scores (SXO/AIO/GEO/AEO) + next 3 actions |
 
 Base URL: `https://aeonos.basechainlabs.com`  
 Payment: x402 v2 · USDC on Base (eip155:8453) · No API key required

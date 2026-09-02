@@ -16,8 +16,8 @@ const ENDPOINTS = [
   { path: "/api/agent",    price: 0.05, query: "What schema markup should a SaaS company add to get cited in Google AI Overviews?" },
   { path: "/api/schema",   price: 0.50, query: "Generate JSON-LD schema for drinklongbrew.com — premium freeze-dried cold brew coffee, pre-order sales" },
   { path: "/api/llms-txt", price: 0.50, query: "Write a complete llms.txt for drinklongbrew.com — premium Australian freeze-dried cold brew coffee brand" },
-  { path: "/api/progress", price: 0.75, query: "Generate an AEO Four Layers progress report for drinklongbrew.com" },
-  { path: "/api/audit",    price: 1.00, query: "Run a full AEO/GEO audit on drinklongbrew.com and give me a P1/P2/P3 action plan" },
+  { path: "/api/progress", price: 1.50, query: "Generate an AEO Four Layers progress report for drinklongbrew.com" },
+  { path: "/api/audit",    price: 2.50, query: "Run a full AEO/GEO audit on drinklongbrew.com and give me a P1/P2/P3 action plan" },
 ];
 
 const C = {

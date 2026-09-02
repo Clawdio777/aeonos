@@ -72,7 +72,7 @@ const TOOLS = [
   },
   {
     name:        "aeonos_audit",
-    description: "Full AEO/GEO audit of any website. Returns AI readiness score (0–100), four-layer analysis (on-page, technical, authority, AI signals), and P1/P2/P3 action roadmap. 1.00 USDC per call.",
+    description: "Full AEO/GEO audit of any website. Returns AI readiness score (0–100), four-layer analysis (on-page, technical, authority, AI signals), and P1/P2/P3 action roadmap. 2.50 USDC per call.",
     inputSchema: {
       type:       "object",
       properties: {
@@ -108,7 +108,7 @@ const TOOLS = [
   },
   {
     name:        "aeonos_progress",
-    description: "Score a website across the AEO Four Layers framework: SXO, AIO, GEO, AEO. Returns per-layer scores (0–100), what's working, what's not, and the next 3 highest-impact actions. Uses persistent memory if available. 0.75 USDC per call.",
+    description: "Score a website across the AEO Four Layers framework: SXO, AIO, GEO, AEO. Returns per-layer scores (0–100), what's working, what's not, and the next 3 highest-impact actions. Uses persistent memory if available. 1.50 USDC per call.",
     inputSchema: {
       type:       "object",
       properties: {
@@ -122,10 +122,10 @@ const TOOLS = [
 
 const TOOL_ROUTES = {
   aeonos_query:    ["/api/agent",    0.05],
-  aeonos_audit:    ["/api/audit",    1.00],
+  aeonos_audit:    ["/api/audit",    2.50],
   aeonos_schema:   ["/api/schema",   0.50],
   aeonos_llms_txt: ["/api/llms-txt", 0.50],
-  aeonos_progress: ["/api/progress", 0.75],
+  aeonos_progress: ["/api/progress", 1.50],
 };
 
 function send(obj) {

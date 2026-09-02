@@ -598,6 +598,7 @@ async function queryGoogleAIOverview(query: string): Promise<{ text: string; sou
 
 async function runCheckLiveCitations(input: Record<string, any>): Promise<string> {
   const { domain, queries, caller_id } = input as { domain: string; queries: string[]; caller_id?: string };
+  const samples = Math.max(1, Number(input.samples) || CITATION_SAMPLES);
   const pplxKey = process.env.PPLX_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
   const hasDFS = !!(process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD);
@@ -608,7 +609,7 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
   if (!queries?.length) return "queries array is required";
 
   const { pplx: pplxResults, gpt: gptResults, aio: aioResults, bing: bingResults } =
-    await collectCitations(domain, queries, CITATION_SAMPLES);
+    await collectCitations(domain, queries, samples);
   const pplxStats = engineStats(pplxResults);
   const gptStats = engineStats(gptResults);
   const aioStats = engineStats(aioResults);
@@ -701,7 +702,7 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
     openaiKey ? `ChatGPT: ${llmLine(gptStats)}` : "",
     hasDFS && aioResults.length ? `Google AI Overviews: ${aioStats.cited}/${aioStats.total} queries cited` : "",
     hasDFS && bingResults.length ? `Bing/Copilot (source pool): ${bingStats.cited}/${bingStats.total} queries in index` : "",
-    `Method: ${CITATION_SAMPLES} samples per query on Perplexity + ChatGPT (✅ = cited in a majority of samples); a change under ~${Math.round(100 / Math.sqrt(Math.max(pplxStats.samples, gptStats.samples, 1)))}pp between runs is within sampling noise.`,
+    `Method: ${samples} samples per query on Perplexity + ChatGPT (✅ = cited in a majority of samples); a change under ~${Math.round(100 / Math.sqrt(Math.max(pplxStats.samples, gptStats.samples, 1)))}pp between runs is within sampling noise.`,
     "",
     ...pplxResults.map((r) =>
       `${r.cited ? "✅" : "❌"} [Perplexity] "${r.query}"${sampleNote(r)}\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Competitors: ${r.competitors.join(", ") || "none identified"}`}`
