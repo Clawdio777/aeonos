@@ -38,11 +38,11 @@ const ACP_TIMEOUT_MS    = 60_000;
 
 // Offering name → USDC fee (must match offering.json jobFee values)
 const OFFERING_FEES = {
-  aeonos_aeo:       "1.00",
+  aeonos_aeo:       "2.50",
   aeonos_test:      "0.01",
   aeonos_schema:    "0.50",
   aeonos_llms_txt:  "0.50",
-  aeonos_progress:  "0.75",
+  aeonos_progress:  "1.50",
 };
 
 // Offering name → query wrapper (ensures correct output regardless of how buyer phrases their request)
