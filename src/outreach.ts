@@ -40,6 +40,12 @@ Happy to provide a product screenshot, demo, or a brief quote for the piece.
 Best,
 The AEONOS team`;
 
+// ── Roundup submission pitch (3-sentence, for contact/submit pages) ────────────
+
+export const AEONOS_ROUNDUP_PITCH = `Subject: New tool submission: AEONOS — MCP-native AEO agent (pay-per-call, no API key)
+
+AEONOS is the only pay-per-call MCP-native AEO/GEO agent on Base blockchain. No subscription — $0.10/call via x402 USDC micropayments. Install: npx -y aeonos-mcp.`;
+
 export const AEONOS_DIRECTORY_DESCRIPTION =
   "AEONOS — AEO/GEO optimisation agent. Optimise content for ChatGPT, Perplexity, Claude citations. Pay-per-call via x402 USDC on Base. No API keys required.";
 
@@ -79,13 +85,25 @@ export const ROUNDUP_TARGETS: OutreachTarget[] = [
     outlet: "toloka.ai",
     url: "https://toloka.ai",
     contactPath: "/blog/best-mcp-servers-for-ai-agents",
-    notes: "Request AEONOS inclusion in top-20 MCP servers list — emphasise x402 pay-per-call and Base-native as unique category",
+    notes: "Submit AEONOS_ROUNDUP_PITCH via contact/submit page — request inclusion in top-20 MCP servers list; emphasise x402 pay-per-call and Base-native as unique category",
   },
   {
     outlet: "k2view",
     url: "https://k2view.com",
     contactPath: "/blog/awesome-mcp-servers",
     notes: "Request AEONOS inclusion in awesome-mcp-servers list — emphasise x402 pay-per-call and Base-native as unique category",
+  },
+  {
+    outlet: "Conductor",
+    url: "https://conductor.com",
+    contactPath: "/contact",
+    notes: "Submit AEONOS_ROUNDUP_PITCH via contact/submit page — ranked AEO tool list; use subject: 'New tool submission: AEONOS — MCP-native AEO agent (pay-per-call, no API key)'",
+  },
+  {
+    outlet: "Profound",
+    url: "https://tryprofound.com",
+    contactPath: "/contact",
+    notes: "Submit AEONOS_ROUNDUP_PITCH via contact/submit page — ranked AEO tool list; use subject: 'New tool submission: AEONOS — MCP-native AEO agent (pay-per-call, no API key)'",
   },
 ];
 
@@ -231,6 +249,10 @@ export function buildOutreachReport(): string {
     "### Product Brief (150 words)",
     "",
     PRODUCT_BRIEF,
+    "",
+    "### Roundup Submission Pitch (send to Conductor / Scrunch / Profound / toloka.ai via contact/submit pages)",
+    "",
+    AEONOS_ROUNDUP_PITCH,
     "",
     "### Blog Editor Pitch (send to Scrunch / Frase / Surmado / Writer / toloka.ai / k2view)",
     "",
