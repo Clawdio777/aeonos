@@ -10,6 +10,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { runWithCosts, addCost, anthropicCost, totalCost } from "./costs.js";
 import { tools, executeTool } from "./tools.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
@@ -107,9 +108,17 @@ export interface AgentResponse {
   response: string;
   tool_calls_made: string[];
   tokens_used: number;
+  /** USD spent on third-party APIs during this run, by provider (anthropic, perplexity, openai, gemini, dataforseo). */
+  costs: Record<string, number>;
+  cost_usd: number;
 }
 
 export async function runAgent(input: AgentQuery): Promise<AgentResponse> {
+  const { result, costs } = await runWithCosts(() => runAgentInner(input));
+  return { ...result, costs, cost_usd: totalCost(costs) };
+}
+
+async function runAgentInner(input: AgentQuery): Promise<Omit<AgentResponse, "costs" | "cost_usd">> {
   const [dynamicKnowledge] = await Promise.all([fetchSailorKnowledge()])
   const systemPrompt = SYSTEM_PROMPT + dynamicKnowledge
 
@@ -141,6 +150,7 @@ export async function runAgent(input: AgentQuery): Promise<AgentResponse> {
     });
 
     totalTokens += response.usage.input_tokens + response.usage.output_tokens;
+    addCost("anthropic", anthropicCost("claude-sonnet-4-6", response.usage));
 
     // Accept both clean end_turn and max_tokens (partial but still useful for long audits).
     if (response.stop_reason === "end_turn" || response.stop_reason === "max_tokens") {
