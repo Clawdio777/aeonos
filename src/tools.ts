@@ -497,7 +497,7 @@ async function collectCitations(domain: string, queries: string[], samples: numb
         pplxKey ? (attempted.pplx++, sampleLlm(domain, q, samples, () => queryPplxRaw(q, pplxKey))) : Promise.resolve(null),
         openaiKey ? (attempted.gpt++, sampleLlm(domain, q, samples, () => queryGPTRaw(q, openaiKey))) : Promise.resolve(null),
         geminiKey ? (attempted.gemini++, sampleLlm(domain, q, samples, () => queryGeminiRaw(q, geminiKey))) : Promise.resolve(null),
-        claudeKey ? (attempted.claude++, sampleLlm(domain, q, Math.min(samples, 3), () => queryClaudeRaw(q))) : Promise.resolve(null),
+        claudeKey ? (attempted.claude++, sampleLlm(domain, q, Math.min(samples, 2), () => queryClaudeRaw(q))) : Promise.resolve(null),
         hasDFS ? (attempted.aio++, queryGoogleAIOverview(q)) : Promise.resolve({ text: "", sources: [], shown: false }),
         hasDFS ? (attempted.aimode++, queryGoogleAIMode(q)) : Promise.resolve({ text: "", sources: [], shown: false }),
       ]);
@@ -597,7 +597,7 @@ async function queryGoogleAIOverview(query: string): Promise<GoogleAnswer> {
       method: "POST",
       headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
       body: JSON.stringify([{ keyword: query, location_code: 2840, language_code: "en", device: "desktop", depth: 10, load_async_ai_overview: true }]),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(20000),
     });
     if (!res.ok) return { text: "", sources: [], shown: false };
     const data = await res.json() as any;
@@ -624,7 +624,7 @@ async function queryGoogleAIMode(query: string): Promise<GoogleAnswer> {
       method: "POST",
       headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
       body: JSON.stringify([{ keyword: query, location_code: 2840, language_code: "en" }]),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(20000),
     });
     if (!res.ok) return { text: "", sources: [], shown: false };
     const data = await res.json() as any;
@@ -786,7 +786,7 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
   const lines: string[] = [
     `## Live Citation Check — ${domain}`,
     ...engines.map(summaryLine),
-    `Method: ${samples} samples per query on ChatGPT, Gemini and Perplexity (Claude up to 3), one fetch per query for Google AI Overviews and AI Mode (✅ = cited in a majority of samples); a change under ~${Math.round(100 / Math.sqrt(maxSamples))}pp between runs is within sampling noise. Engines marked NOT SAMPLED returned nothing and must be reported as unknown, never as 0%. Bing/Copilot is not measured (no reliable source).`,
+    `Method: ${samples} samples per query on ChatGPT, Gemini and Perplexity (Claude up to 2), one fetch per query for Google AI Overviews and AI Mode (✅ = cited in a majority of samples); a change under ~${Math.round(100 / Math.sqrt(maxSamples))}pp between runs is within sampling noise. Engines marked NOT SAMPLED returned nothing and must be reported as unknown, never as 0%. Bing/Copilot is not measured (no reliable source).`,
     "",
     ...engines.flatMap((e) => e.rows.map((r) =>
       `${r.cited ? "✅" : "❌"} [${e.label}] "${r.query}"${sampleNote(r)}\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Cited instead: ${(r.competitorUrls.length ? r.competitorUrls : r.competitors).join(", ") || "none identified"}`}`
