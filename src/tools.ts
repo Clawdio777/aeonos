@@ -5,7 +5,7 @@
  * 2. retrieveSharedAEO   — AEONOS seeded AEO/GEO knowledge base
  * 3. retrieveCallerMemory — Caller-specific persistent context
  * 4. storeCallerMemory   — Save new context for this caller
- * 5. checkLiveCitations  — Real citation data from Perplexity, ChatGPT, Google AI Overviews, Bing/Copilot
+ * 5. checkLiveCitations  — Real citation data from ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity, Claude
  * 6. inspectSiteStructure — 10-function site audit with confidence score + delta reporting
  */
 
@@ -126,7 +126,7 @@ export const tools: Anthropic.Tool[] = [
     name: "checkLiveCitations",
     description:
       "Check whether a domain is being cited by Perplexity, ChatGPT, Google AI Overviews, and Bing/Copilot. " +
-      "This is REAL citation data — not structural inference. Call this during every audit to ground " +
+      "This is REAL citation data from ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude — not structural inference. Engines marked NOT SAMPLED returned nothing: report them as unknown, never as 0%. Call this during every audit to ground " +
       "your recommendations in actual AI search behaviour. " +
       "Pass the domain being audited and 4-6 queries that represent how their target customers " +
       "search in AI engines (e.g. 'best AI SEO tool for small business', 'how to rank in ChatGPT'). " +
@@ -465,35 +465,61 @@ function serpRow(domain: string, query: string, text: string, sources: string[])
   return { ...r, query, citedSamples: r.cited ? 1 : 0, samples: 1 };
 }
 
-type Collected = { pplx: LlmRow[]; gpt: LlmRow[]; aio: CitRow[]; bing: CitRow[] };
+type Collected = {
+  pplx: LlmRow[]; gpt: LlmRow[]; gemini: LlmRow[]; claude: LlmRow[];
+  aio: CitRow[]; aimode: CitRow[];
+  /** Engines that produced no data this run, with the reason. Reported as "not sampled", never as 0%. */
+  unavailable: Record<string, string>;
+};
 
+// Engine tiers (19/09/2026, per referral-share studies): Tier 1 ChatGPT, Google AI Overviews + AI Mode, Gemini.
+// Tier 2 Perplexity, Claude. Bing/Copilot is NOT sampled: the Bing SERP proxy (DataForSEO) returned unrelated
+// results for every query on 19/09/2026 and Copilot has no answer API, so reporting it would be fiction.
 async function collectCitations(domain: string, queries: string[], samples: number): Promise<Collected> {
   const pplxKey = process.env.PPLX_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const claudeKey = process.env.ANTHROPIC_API_KEY;
   const hasDFS = !!(process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD);
-  const out: Collected = { pplx: [], gpt: [], aio: [], bing: [] };
+  const out: Collected = { pplx: [], gpt: [], gemini: [], claude: [], aio: [], aimode: [], unavailable: {} };
   const ordered = queries.slice(0, 6);
   const queue = [...ordered];
+  const attempted = { pplx: 0, gpt: 0, gemini: 0, claude: 0, aio: 0, aimode: 0 };
 
   const worker = async () => {
     for (let query = queue.shift(); query !== undefined; query = queue.shift()) {
       const q = query;
-      const [pplx, gpt, aio, bing] = await Promise.allSettled([
-        pplxKey ? sampleLlm(domain, q, samples, () => queryPplxRaw(q, pplxKey)) : Promise.resolve(null),
-        openaiKey ? sampleLlm(domain, q, samples, () => queryGPTRaw(q, openaiKey)) : Promise.resolve(null),
-        hasDFS ? queryGoogleAIOverview(q) : Promise.resolve({ text: "", sources: [] }),
-        hasDFS ? queryBingResults(q) : Promise.resolve({ text: "", sources: [] }),
+      const [pplx, gpt, gemini, claude, aio, aimode] = await Promise.allSettled([
+        pplxKey ? (attempted.pplx++, sampleLlm(domain, q, samples, () => queryPplxRaw(q, pplxKey))) : Promise.resolve(null),
+        openaiKey ? (attempted.gpt++, sampleLlm(domain, q, samples, () => queryGPTRaw(q, openaiKey))) : Promise.resolve(null),
+        geminiKey ? (attempted.gemini++, sampleLlm(domain, q, samples, () => queryGeminiRaw(q, geminiKey))) : Promise.resolve(null),
+        claudeKey ? (attempted.claude++, sampleLlm(domain, q, Math.min(samples, 3), () => queryClaudeRaw(q))) : Promise.resolve(null),
+        hasDFS ? (attempted.aio++, queryGoogleAIOverview(q)) : Promise.resolve({ text: "", sources: [], shown: false }),
+        hasDFS ? (attempted.aimode++, queryGoogleAIMode(q)) : Promise.resolve({ text: "", sources: [], shown: false }),
       ]);
       if (pplx.status === "fulfilled" && pplx.value) out.pplx.push(pplx.value);
       if (gpt.status === "fulfilled" && gpt.value) out.gpt.push(gpt.value);
-      if (aio.status === "fulfilled" && (aio.value.text || aio.value.sources.length)) out.aio.push(serpRow(domain, q, aio.value.text, aio.value.sources));
-      if (bing.status === "fulfilled" && bing.value.sources.length) out.bing.push(serpRow(domain, q, "", bing.value.sources));
+      if (gemini.status === "fulfilled" && gemini.value) out.gemini.push(gemini.value);
+      if (claude.status === "fulfilled" && claude.value) out.claude.push(claude.value);
+      // Google surfaces: a fetched SERP with no AI answer is a genuine "not shown" and counts as not cited
+      if (aio.status === "fulfilled" && aio.value.shown) out.aio.push(serpRow(domain, q, aio.value.text, aio.value.sources));
+      if (aimode.status === "fulfilled" && aimode.value.shown) out.aimode.push(serpRow(domain, q, aimode.value.text, aimode.value.sources));
     }
   };
   await Promise.all(Array.from({ length: Math.min(QUERY_CONCURRENCY, ordered.length) }, worker));
 
   const byQuery = (a: CitRow, b: CitRow) => ordered.indexOf(a.query) - ordered.indexOf(b.query);
-  out.pplx.sort(byQuery); out.gpt.sort(byQuery); out.aio.sort(byQuery); out.bing.sort(byQuery);
+  for (const k of ["pplx", "gpt", "gemini", "claude", "aio", "aimode"] as const) out[k].sort(byQuery);
+
+  if (!pplxKey) out.unavailable.perplexity = "no PPLX_API_KEY";
+  else if (attempted.pplx && !out.pplx.length) out.unavailable.perplexity = "API returned no data (check Perplexity key or quota)";
+  if (!openaiKey) out.unavailable.chatgpt = "no OPENAI_API_KEY";
+  else if (attempted.gpt && !out.gpt.length) out.unavailable.chatgpt = "API returned no data (check OpenAI credits)";
+  if (!geminiKey) out.unavailable.gemini = "no GEMINI_API_KEY";
+  else if (attempted.gemini && !out.gemini.length) out.unavailable.gemini = "API returned no data (check Gemini credits)";
+  if (!claudeKey) out.unavailable.claude = "no ANTHROPIC_API_KEY";
+  else if (attempted.claude && !out.claude.length) out.unavailable.claude = "API returned no data";
+  if (!hasDFS) { out.unavailable.google_ai_overviews = "no DataForSEO credentials"; out.unavailable.google_ai_mode = "no DataForSEO credentials"; }
   return out;
 }
 
@@ -545,183 +571,228 @@ async function queryGPTRaw(question: string, key: string): Promise<{ answer: str
   } catch { return { answer: "", citations: [] }; }
 }
 
-async function queryBingResults(query: string): Promise<{ text: string; sources: string[] }> {
-  const login = process.env.DATAFORSEO_LOGIN;
-  const password = process.env.DATAFORSEO_PASSWORD;
-  if (!login || !password) return { text: "", sources: [] };
-  try {
-    const auth = Buffer.from(`${login}:${password}`).toString("base64");
-    const res = await fetch("https://api.dataforseo.com/v3/serp/bing/organic/live/regular", {
-      method: "POST",
-      headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
-      body: JSON.stringify([{ keyword: query, location_code: 2840, language_code: "en", device: "desktop", depth: 10 }]),
-      signal: AbortSignal.timeout(20000),
-    });
-    if (!res.ok) return { text: "", sources: [] };
-    const data = await res.json() as any;
-    const items: any[] = data.tasks?.[0]?.result?.[0]?.items ?? [];
-    // Bing Copilot draws from organic results — top 10 = Copilot source pool
-    const sources: string[] = items
-      .filter((item: any) => item.type === "organic")
-      .slice(0, 10)
-      .map((i: any) => i.url ?? "")
-      .filter(Boolean);
-    return { text: "", sources };
-  } catch { return { text: "", sources: [] }; }
+type GoogleAnswer = { text: string; sources: string[]; shown: boolean };
+
+function markdownLinks(md: string): string[] {
+  return [...md.matchAll(/\]\((https?:\/\/[^)\s]+)\)/g)].map((m) => m[1]);
 }
 
-async function queryGoogleAIOverview(query: string): Promise<{ text: string; sources: string[] }> {
+function dfsAuth(): string | null {
   const login = process.env.DATAFORSEO_LOGIN;
   const password = process.env.DATAFORSEO_PASSWORD;
-  if (!login || !password) return { text: "", sources: [] };
+  if (!login || !password) return null;
+  return Buffer.from(`${login}:${password}`).toString("base64");
+}
+
+/** Google AI Overview for the query. The /regular endpoint never returned one; /advanced with load_async_ai_overview does. */
+async function queryGoogleAIOverview(query: string): Promise<GoogleAnswer> {
+  const auth = dfsAuth();
+  if (!auth) return { text: "", sources: [], shown: false };
   try {
-    const auth = Buffer.from(`${login}:${password}`).toString("base64");
-    const res = await fetch("https://api.dataforseo.com/v3/serp/google/organic/live/regular", {
+    const res = await fetch("https://api.dataforseo.com/v3/serp/google/organic/live/advanced", {
       method: "POST",
       headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
-      body: JSON.stringify([{ keyword: query, location_code: 2840, language_code: "en", device: "desktop", depth: 10 }]),
-      signal: AbortSignal.timeout(20000),
+      body: JSON.stringify([{ keyword: query, location_code: 2840, language_code: "en", device: "desktop", depth: 10, load_async_ai_overview: true }]),
+      signal: AbortSignal.timeout(30000),
     });
-    if (!res.ok) return { text: "", sources: [] };
+    if (!res.ok) return { text: "", sources: [], shown: false };
     const data = await res.json() as any;
+    if (data.tasks?.[0]?.status_code !== 20000) return { text: "", sources: [], shown: false };
     const items: any[] = data.tasks?.[0]?.result?.[0]?.items ?? [];
     const aio = items.find((item: any) => item.type === "ai_overview");
-    if (!aio) return { text: "", sources: [] };
-    const text: string = aio.text ?? aio.description ?? "";
+    if (!aio) return { text: "", sources: [], shown: false };
+    const text: string = aio.markdown ?? aio.text ?? (aio.items ?? []).map((i: any) => i.text ?? "").join(" ");
     const sources: string[] = [
-      ...(aio.items ?? []).map((i: any) => i.url ?? i.source?.url ?? ""),
       ...(aio.references ?? []).map((i: any) => i.url ?? ""),
+      ...(aio.items ?? []).flatMap((i: any) => (i.references ?? []).map((r: any) => r.url ?? "")),
+      ...markdownLinks(text),
     ].filter(Boolean);
-    return { text, sources };
-  } catch { return { text: "", sources: [] }; }
+    return { text, sources: [...new Set(sources)], shown: true };
+  } catch { return { text: "", sources: [], shown: false }; }
+}
+
+/** Google AI Mode answer for the query (DataForSEO serp/google/ai_mode). */
+async function queryGoogleAIMode(query: string): Promise<GoogleAnswer> {
+  const auth = dfsAuth();
+  if (!auth) return { text: "", sources: [], shown: false };
+  try {
+    const res = await fetch("https://api.dataforseo.com/v3/serp/google/ai_mode/live/advanced", {
+      method: "POST",
+      headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
+      body: JSON.stringify([{ keyword: query, location_code: 2840, language_code: "en" }]),
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!res.ok) return { text: "", sources: [], shown: false };
+    const data = await res.json() as any;
+    if (data.tasks?.[0]?.status_code !== 20000) return { text: "", sources: [], shown: false };
+    const items: any[] = data.tasks?.[0]?.result?.[0]?.items ?? [];
+    const answer = items.find((item: any) => item.type === "ai_overview" || item.type === "ai_mode");
+    if (!answer) return { text: "", sources: [], shown: false };
+    const text: string = answer.markdown ?? answer.text ?? "";
+    const sources: string[] = [
+      ...(answer.references ?? []).map((i: any) => i.url ?? ""),
+      ...(answer.items ?? []).flatMap((i: any) => (i.references ?? []).map((r: any) => r.url ?? "")),
+      ...markdownLinks(text),
+    ].filter(Boolean);
+    return { text, sources: [...new Set(sources)], shown: true };
+  } catch { return { text: "", sources: [], shown: false }; }
+}
+
+/** Gemini with Google Search grounding. Grounding chunks carry a redirect URI and the source domain as title. */
+async function queryGeminiRaw(question: string, key: string): Promise<{ answer: string; citations: string[] }> {
+  const model = process.env.GEMINI_MODEL || "gemini-flash-latest";
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: question }] }], tools: [{ google_search: {} }] }),
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!res.ok) return { answer: "", citations: [] };
+    const data = await res.json() as any;
+    const cand = data.candidates?.[0];
+    const answer: string = (cand?.content?.parts ?? []).map((p: any) => p.text ?? "").join("");
+    const citations: string[] = (cand?.groundingMetadata?.groundingChunks ?? [])
+      .map((c: any) => {
+        const title: string = c.web?.title ?? "";
+        const uri: string = c.web?.uri ?? "";
+        return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(title) ? `https://${title}/` : uri;
+      })
+      .filter(Boolean);
+    return { answer, citations };
+  } catch { return { answer: "", citations: [] }; }
+}
+
+/** Claude with the web search tool. Sources come from the search result blocks and the text citations. */
+async function queryClaudeRaw(question: string): Promise<{ answer: string; citations: string[] }> {
+  try {
+    const res = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 700,
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 } as any],
+      messages: [{ role: "user", content: question }],
+    });
+    const blocks: any[] = res.content as any[];
+    const answer = blocks.filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
+    const citations: string[] = [];
+    for (const b of blocks) {
+      if (b.type === "web_search_tool_result" && Array.isArray(b.content)) for (const r of b.content) if (r?.url) citations.push(r.url);
+      if (b.type === "text" && Array.isArray(b.citations)) for (const c of b.citations) if (c?.url) citations.push(c.url);
+    }
+    return { answer, citations: [...new Set(citations)] };
+  } catch { return { answer: "", citations: [] }; }
 }
 
 async function runCheckLiveCitations(input: Record<string, any>): Promise<string> {
   const { domain, queries, caller_id } = input as { domain: string; queries: string[]; caller_id?: string };
   const samples = Math.max(1, Number(input.samples) || CITATION_SAMPLES);
-  const pplxKey = process.env.PPLX_API_KEY;
-  const openaiKey = process.env.OPENAI_API_KEY;
-  const hasDFS = !!(process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD);
-
-  if (!pplxKey && !openaiKey) {
-    return "No citation API keys configured (PPLX_API_KEY or OPENAI_API_KEY required).";
+  if (!process.env.PPLX_API_KEY && !process.env.OPENAI_API_KEY && !process.env.GEMINI_API_KEY && !process.env.ANTHROPIC_API_KEY) {
+    return "No citation API keys configured (PPLX_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY or ANTHROPIC_API_KEY required).";
   }
   if (!queries?.length) return "queries array is required";
 
-  const { pplx: pplxResults, gpt: gptResults, aio: aioResults, bing: bingResults } =
-    await collectCitations(domain, queries, samples);
-  const pplxStats = engineStats(pplxResults);
-  const gptStats = engineStats(gptResults);
-  const aioStats = engineStats(aioResults);
-  const bingStats = engineStats(bingResults);
-  const allCompetitors = [...new Set([...pplxResults, ...gptResults, ...aioResults, ...bingResults].flatMap((r) => r.competitors))].slice(0, 8);
-  const zeroCitations = [pplxStats, gptStats, aioStats, bingStats].every((s) => s.citedSamples === 0);
+  const c = await collectCitations(domain, queries, samples);
+  const engines: { key: keyof Collected & string; label: string; rows: CitRow[]; llm: boolean; unavailableKey: string }[] = [
+    { key: "gpt", label: "ChatGPT", rows: c.gpt, llm: true, unavailableKey: "chatgpt" },
+    { key: "gemini", label: "Gemini", rows: c.gemini, llm: true, unavailableKey: "gemini" },
+    { key: "aio", label: "Google AI Overviews", rows: c.aio, llm: false, unavailableKey: "google_ai_overviews" },
+    { key: "aimode", label: "Google AI Mode", rows: c.aimode, llm: false, unavailableKey: "google_ai_mode" },
+    { key: "pplx", label: "Perplexity", rows: c.pplx, llm: true, unavailableKey: "perplexity" },
+    { key: "claude", label: "Claude", rows: c.claude, llm: true, unavailableKey: "claude" },
+  ];
+  const stats = Object.fromEntries(engines.map((e) => [e.key, engineStats(e.rows)])) as Record<string, EngineStats>;
+  const measured = engines.filter((e) => !c.unavailable[e.unavailableKey] && e.rows.length);
+  const allCompetitors = [...new Set(engines.flatMap((e) => e.rows).flatMap((r) => r.competitors))].slice(0, 8);
+  const zeroCitations = measured.length > 0 && measured.every((e) => stats[e.key].citedSamples === 0);
   const timestamp = new Date().toISOString();
 
-  // Sentiment analysis — batch all answers with text into one Haiku call
-  const sentimentInputs = [
-    ...pplxResults.map((r) => ({ query: r.query, engine: "perplexity", answer: r.answer, cited: r.cited })),
-    ...gptResults.map((r) => ({ query: r.query, engine: "chatgpt", answer: r.answer, cited: r.cited })),
-  ];
-  const sentimentResults = await classifyAnswerSentiment(domain, sentimentInputs);
+  // Sentiment analysis — batch all LLM answers with text into one Haiku call
+  const llmRows = (rows: LlmRow[], engine: string) => rows.map((r) => ({ query: r.query, engine, answer: r.answer, cited: r.cited }));
+  const sentimentResults = await classifyAnswerSentiment(domain, [
+    ...llmRows(c.pplx, "perplexity"), ...llmRows(c.gpt, "chatgpt"), ...llmRows(c.gemini, "gemini"), ...llmRows(c.claude, "claude"),
+  ]);
 
   // Persist to citation_history when caller_id is provided
   let deltaSection = "";
   if (caller_id) {
     try {
-      const { data: existing } = await db
-        .from("caller_memory")
-        .select("citation_history")
-        .eq("caller_id", caller_id)
-        .single();
-
+      const { data: existing } = await db.from("caller_memory").select("citation_history").eq("caller_id", caller_id).single();
       const prevHistory: any[] = (existing as any)?.citation_history ?? [];
       const snapshot = {
         timestamp,
         domain,
-        perplexity: { ...pplxStats, results: pplxResults.map(stripAnswer) },
-        chatgpt: { ...gptStats, results: gptResults.map(stripAnswer) },
-        googleAIO: { ...aioStats },
-        bing: { ...bingStats },
+        perplexity: { ...stats.pplx, results: c.pplx.map(stripAnswer) },
+        chatgpt: { ...stats.gpt, results: c.gpt.map(stripAnswer) },
+        gemini: { ...stats.gemini, results: c.gemini.map(stripAnswer) },
+        claude: { ...stats.claude, results: c.claude.map(stripAnswer) },
+        googleAIO: { ...stats.aio },
+        googleAIMode: { ...stats.aimode },
+        unavailable: c.unavailable,
         answers: {
-          perplexity: pplxResults.map(({ query, answer }) => ({ query, answer: answer.slice(0, 1000) })),
-          chatgpt: gptResults.map(({ query, answer }) => ({ query, answer: answer.slice(0, 1000) })),
+          perplexity: c.pplx.map(({ query, answer }) => ({ query, answer: answer.slice(0, 1000) })),
+          chatgpt: c.gpt.map(({ query, answer }) => ({ query, answer: answer.slice(0, 1000) })),
+          gemini: c.gemini.map(({ query, answer }) => ({ query, answer: answer.slice(0, 1000) })),
+          claude: c.claude.map(({ query, answer }) => ({ query, answer: answer.slice(0, 1000) })),
         },
         sentiment: sentimentResults,
         competitors: allCompetitors,
       };
-
       await db.from("caller_memory").upsert(
-        {
-          caller_id,
-          citation_history: [...prevHistory, snapshot].slice(-20),
-          updated_at: timestamp,
-        },
+        { caller_id, citation_history: [...prevHistory, snapshot].slice(-20), updated_at: timestamp },
         { onConflict: "caller_id" }
       );
 
-      // Build delta section comparing vs most recent previous run for same domain
       const prevRun = [...prevHistory].reverse().find((h) => h.domain === domain);
       if (prevRun) {
         const prevDate = new Date(prevRun.timestamp).toLocaleDateString("en-AU");
         const fmt = (n: number) => n > 0 ? `+${n}` : `${n}`;
-        // Older snapshots have no rate — derive it from queries cited / queries checked (1 sample each).
         const prevRate = (p: any): number | null =>
           typeof p?.rate === "number" ? p.rate : p?.total ? Math.round((p.cited / p.total) * 100) : null;
-        // Conservative 95% band for a proportion at this sample size (p = 0.5 worst case): 100/√n pp.
-        const noise = (s: EngineStats) => Math.round(100 / Math.sqrt(Math.max(s.samples, 1)));
-        const engineLine = (label: string, now: EngineStats, prev: any) => {
-          const was = prevRate(prev);
-          if (was === null || !now.samples) return { line: `${label}: no comparable data`, diff: 0, real: false };
+        const noise = (st: EngineStats) => Math.round(100 / Math.sqrt(Math.max(st.samples, 1)));
+        const lines: string[] = [];
+        let net = 0; let anyReal = false;
+        for (const e of engines) {
+          const now = stats[e.key];
+          const prevKey = e.key === "pplx" ? "perplexity" : e.key === "gpt" ? "chatgpt" : e.key === "aio" ? "googleAIO" : e.key === "aimode" ? "googleAIMode" : e.key;
+          const was = prevRate(prevRun[prevKey]);
+          if (was === null || !now.samples) { lines.push(`${e.label}: no comparable data`); continue; }
           const diff = now.rate - was;
           const real = Math.abs(diff) > noise(now);
-          return {
-            line: `${label}: ${fmt(diff)}pp (${was}% → ${now.rate}%, n=${now.samples}${real ? "" : `, within noise ±${noise(now)}pp`})`,
-            diff,
-            real,
-          };
-        };
-        const p = engineLine("Perplexity", pplxStats, prevRun.perplexity);
-        const g = engineLine("ChatGPT", gptStats, prevRun.chatgpt);
-        const net = p.diff + g.diff;
-        const verdict = !p.real && !g.real
-          ? "No change beyond sampling noise since last check."
-          : net > 0 ? "📈 Citation presence improving." : "📉 Citation presence declined.";
-        deltaSection = `\n\n## DELTA VS PREVIOUS RUN (${prevDate})\n${p.line}\n${g.line}\n${verdict}`;
+          net += diff; anyReal = anyReal || real;
+          lines.push(`${e.label}: ${fmt(diff)}pp (${was}% → ${now.rate}%, n=${now.samples}${real ? "" : `, within noise ±${noise(now)}pp`})`);
+        }
+        const verdict = !anyReal ? "No change beyond sampling noise since last check." : net > 0 ? "📈 Citation presence improving." : "📉 Citation presence declined.";
+        deltaSection = `\n\n## DELTA VS PREVIOUS RUN (${prevDate})\n${lines.join("\n")}\n${verdict}`;
       } else {
         deltaSection = "\n\n## DELTA VS PREVIOUS RUN\nFirst run for this domain — no previous data to compare.";
       }
     } catch {}
   }
 
-  const llmLine = (s: EngineStats) => `${s.rate}% citation rate (${s.citedSamples}/${s.samples} samples across ${s.total} queries)`;
+  const llmLine = (st: EngineStats) => `${st.rate}% citation rate (${st.citedSamples}/${st.samples} samples across ${st.total} queries)`;
+  const serpLine = (st: EngineStats) => `${st.cited}/${st.total} queries cited`;
   const sampleNote = (r: CitRow) => r.samples > 1 ? ` — ${r.citedSamples}/${r.samples} samples cited` : "";
+  const summaryLine = (e: typeof engines[number]) => {
+    const reason = c.unavailable[e.unavailableKey];
+    if (reason) return `${e.label}: NOT SAMPLED (${reason})`;
+    if (!e.rows.length) return `${e.label}: NOT SAMPLED (${e.llm ? "no answers returned" : "no AI answer shown for these queries"})`;
+    return `${e.label}: ${e.llm ? llmLine(stats[e.key]) : serpLine(stats[e.key])}`;
+  };
+  const maxSamples = Math.max(1, ...measured.map((e) => stats[e.key].samples));
   const lines: string[] = [
     `## Live Citation Check — ${domain}`,
-    pplxKey ? `Perplexity: ${llmLine(pplxStats)}` : "",
-    openaiKey ? `ChatGPT: ${llmLine(gptStats)}` : "",
-    hasDFS && aioResults.length ? `Google AI Overviews: ${aioStats.cited}/${aioStats.total} queries cited` : "",
-    hasDFS && bingResults.length ? `Bing/Copilot (source pool): ${bingStats.cited}/${bingStats.total} queries in index` : "",
-    `Method: ${samples} samples per query on Perplexity + ChatGPT (✅ = cited in a majority of samples); a change under ~${Math.round(100 / Math.sqrt(Math.max(pplxStats.samples, gptStats.samples, 1)))}pp between runs is within sampling noise.`,
+    ...engines.map(summaryLine),
+    `Method: ${samples} samples per query on ChatGPT, Gemini and Perplexity (Claude up to 3), one fetch per query for Google AI Overviews and AI Mode (✅ = cited in a majority of samples); a change under ~${Math.round(100 / Math.sqrt(maxSamples))}pp between runs is within sampling noise. Engines marked NOT SAMPLED returned nothing and must be reported as unknown, never as 0%. Bing/Copilot is not measured (no reliable source).`,
     "",
-    ...pplxResults.map((r) =>
-      `${r.cited ? "✅" : "❌"} [Perplexity] "${r.query}"${sampleNote(r)}\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Competitors: ${r.competitors.join(", ") || "none identified"}`}`
-    ),
-    ...gptResults.map((r) =>
-      `${r.cited ? "✅" : "❌"} [ChatGPT] "${r.query}"${sampleNote(r)}\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Competitors: ${r.competitors.join(", ") || "none identified"}`}`
-    ),
-    ...aioResults.map((r) =>
-      `${r.cited ? "✅" : "❌"} [Google AI Overview] "${r.query}"\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Competitors: ${r.competitors.join(", ") || "none identified"}`}`
-    ),
-    ...bingResults.map((r) =>
-      `${r.cited ? "✅" : "❌"} [Bing/Copilot] "${r.query}"\n   ${r.cited ? `In index: ${r.sources.join(", ")}` : `Competitors: ${r.competitors.join(", ") || "none identified"}`}`
-    ),
+    ...engines.flatMap((e) => e.rows.map((r) =>
+      `${r.cited ? "✅" : "❌"} [${e.label}] "${r.query}"${sampleNote(r)}\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Cited instead: ${r.competitors.join(", ") || "none identified"}`}`
+    )),
     "",
     allCompetitors.length ? `Competitor domains appearing instead: ${allCompetitors.join(", ")}` : "",
     "",
     zeroCitations
-      ? `⚠️ ${domain} has ZERO citations across all four AI engines. This is the #1 priority finding in this audit.`
-      : `Citation presence: Perplexity ${pplxStats.rate}% (n=${pplxStats.samples}) | ChatGPT ${gptStats.rate}% (n=${gptStats.samples}) | Google AI Overviews ${aioStats.cited}/${aioStats.total || "n/a"} | Bing/Copilot ${bingStats.cited}/${bingStats.total || "n/a"}.`,
+      ? `⚠️ ${domain} has ZERO citations across every engine that returned data (${measured.map((e) => e.label).join(", ")}). This is the #1 priority finding in this audit.`
+      : `Citation presence: ` + engines.map((e) => c.unavailable[e.unavailableKey] || !e.rows.length ? `${e.label} not sampled` : e.llm ? `${e.label} ${stats[e.key].rate}% (n=${stats[e.key].samples})` : `${e.label} ${stats[e.key].cited}/${stats[e.key].total}`).join(" | ") + ".",
     sentimentResults.length
       ? `\n## Sentiment Analysis\n` + sentimentResults.map((s) => {
           const icon = s.sentiment === "positive" ? "🟢" : s.sentiment === "negative" ? "🔴" : "🟡";
@@ -740,33 +811,33 @@ export type CitationSnapshot = {
   domain: string;
   perplexity: EngineStats & { results: CitRow[] };
   chatgpt: EngineStats & { results: CitRow[] };
+  gemini: EngineStats & { results: CitRow[] };
+  claude: EngineStats & { results: CitRow[] };
   googleAIO: EngineStats & { results: CitRow[] };
-  bing: EngineStats & { results: CitRow[] };
+  googleAIMode: EngineStats & { results: CitRow[] };
+  unavailable: Record<string, string>;
   competitors: string[];
   sentiment: SentimentResult[];
 };
 
 /** Single-sample check — share-of-voice runs 2–5 brands in parallel, so sampling is kept at 1 to bound cost. */
 export async function checkCitationsRaw(domain: string, queries: string[]): Promise<CitationSnapshot> {
-  const { pplx: pplxResults, gpt: gptResults, aio: aioResults, bing: bingResults } =
-    await collectCitations(domain, queries, 1);
-
-  const allCompetitors = [
-    ...new Set([...pplxResults, ...gptResults, ...aioResults, ...bingResults].flatMap((r) => r.competitors)),
-  ].slice(0, 8);
-
-  const sentimentInputs = [
-    ...pplxResults.map((r) => ({ query: r.query, engine: "perplexity", answer: r.answer, cited: r.cited })),
-    ...gptResults.map((r) => ({ query: r.query, engine: "chatgpt", answer: r.answer, cited: r.cited })),
-  ];
-  const sentiment = await classifyAnswerSentiment(domain, sentimentInputs);
-
+  const c = await collectCitations(domain, queries, 1);
+  const all = [...c.pplx, ...c.gpt, ...c.gemini, ...c.claude, ...c.aio, ...c.aimode];
+  const allCompetitors = [...new Set(all.flatMap((r) => r.competitors))].slice(0, 8);
+  const llmRows = (rows: LlmRow[], engine: string) => rows.map((r) => ({ query: r.query, engine, answer: r.answer, cited: r.cited }));
+  const sentiment = await classifyAnswerSentiment(domain, [
+    ...llmRows(c.pplx, "perplexity"), ...llmRows(c.gpt, "chatgpt"), ...llmRows(c.gemini, "gemini"), ...llmRows(c.claude, "claude"),
+  ]);
   return {
     domain,
-    perplexity: { ...engineStats(pplxResults), results: pplxResults.map(stripAnswer) },
-    chatgpt: { ...engineStats(gptResults), results: gptResults.map(stripAnswer) },
-    googleAIO: { ...engineStats(aioResults), results: aioResults },
-    bing: { ...engineStats(bingResults), results: bingResults },
+    perplexity: { ...engineStats(c.pplx), results: c.pplx.map(stripAnswer) },
+    chatgpt: { ...engineStats(c.gpt), results: c.gpt.map(stripAnswer) },
+    gemini: { ...engineStats(c.gemini), results: c.gemini.map(stripAnswer) },
+    claude: { ...engineStats(c.claude), results: c.claude.map(stripAnswer) },
+    googleAIO: { ...engineStats(c.aio), results: c.aio },
+    googleAIMode: { ...engineStats(c.aimode), results: c.aimode },
+    unavailable: c.unavailable,
     competitors: allCompetitors,
     sentiment,
   };

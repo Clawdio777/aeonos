@@ -11,7 +11,7 @@ export const PRODUCT_BRIEF = `AEONOS (aeonos-mcp) is an agent-native AEO/GEO MCP
 
 Unique angle: pay-per-call pricing via x402 micropayments ($0.10 USDC on Base blockchain). Every audit call is permissionless and agent-to-agent composable, making AEONOS the first AEO/GEO tool purpose-built for autonomous agent pipelines and the agentic web.
 
-Core capabilities: live citation checks across Perplexity, ChatGPT, Bing/Copilot and Google AI Overviews; JSON-LD schema generation; E-E-A-T scoring; llms.txt templates; and entity disambiguation analysis — all returned in a single MCP tool call.
+Core capabilities: live citation checks across ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude; JSON-LD schema generation; E-E-A-T scoring; llms.txt templates; and entity disambiguation analysis — all returned in a single MCP tool call.
 
 npm: https://www.npmjs.com/package/aeonos-mcp
 Marketplace: https://agentic.market/?search=aeonos`;
@@ -29,7 +29,7 @@ AEONOS is the only AEO/GEO tool built as an MCP server with per-call USDC paymen
 Key differentiators worth a line in your list:
 • MCP-native: runs inside Claude/Cursor with zero setup
 • Per-call USDC micropayments via x402 — no subscription lock-in
-• Live citation checks across Perplexity, ChatGPT, Google AI Overviews, and Bing/Copilot
+• Live citation checks across ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude
 • Agent-to-agent compatible: other AI agents can invoke it autonomously
 
 npm package: https://www.npmjs.com/package/aeonos-mcp
