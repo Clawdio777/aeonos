@@ -2,7 +2,7 @@
  * POST /api/share-of-voice — AI share of voice across multiple brands · 1.50 USDC
  *
  * Runs citation checks for 2-5 brands in parallel across Perplexity, ChatGPT,
- * Google AI Overviews, and Bing/Copilot. Returns share of voice percentages
+ * Google AI Overviews, Google AI Mode, Gemini and Claude. Returns share of voice percentages
  * per engine and per query, so you can see exactly where competitors are winning.
  */
 
@@ -14,18 +14,18 @@ import { checkCitationsRaw, type CitationSnapshot } from "../src/tools.js";
 const PRICE_USDC    = 1.50;
 const BASE_URL      = () => process.env.AGENT_BASE_URL || "https://aeonos.basechainlabs.com";
 const RESOURCE_URL  = () => `${BASE_URL()}/api/share-of-voice`;
-const RESOURCE_DESC = "AI share of voice — compare 2-5 brands across Perplexity, ChatGPT, Google AI Overviews, and Bing/Copilot. Returns % of queries where each brand is cited per engine. 1.50 USDC.";
+const RESOURCE_DESC = "AI share of voice — compare 2-5 brands across ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude. Returns % of queries where each brand is cited per engine. 1.50 USDC.";
 
 const BAZAAR = buildBazaarExtension({
   serviceName:      "AEONOS — Share of Voice",
   queryDescription: "Brands to compare (2-5 domains) and queries to run. E.g. brands: ['pemba.ai','competitor.com'], queries: ['best AI salon software']",
   queryExample:     "Compare share of voice: pemba.ai vs booksy.com vs fresha.com for 'best salon booking app'",
-  outputExample:    "## Share of Voice — AI Search\n\n| Brand | Perplexity | ChatGPT | Google AIO | Bing |\n|---|---|---|---|---|\n| pemba.ai | 60% | 40% | 0% | 20% |\n| booksy.com | 20% | 40% | 100% | 60% |",
+  outputExample:    "## Share of Voice — AI Search\n\n| Brand | ChatGPT | Gemini | Google AIO | Google AI Mode | Perplexity | Claude |\n|---|---|---|---|---|---|---|\n| pemba.ai | 40% | 20% | 0% | 20% | 60% | 40% |\n| booksy.com | 40% | 60% | 100% | 80% | 20% | 20% |",
 });
 
 const db = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!);
 
-function calcShareOfVoice(snapshots: CitationSnapshot[], engine: "perplexity" | "chatgpt" | "googleAIO" | "bing") {
+function calcShareOfVoice(snapshots: CitationSnapshot[], engine: "perplexity" | "chatgpt" | "gemini" | "claude" | "googleAIO" | "googleAIMode") {
   const totals = snapshots.map((s) => s[engine].cited);
   const sum = totals.reduce((a, b) => a + b, 0);
   return snapshots.map((s, i) => ({
@@ -72,12 +72,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Run citation checks for all brands in parallel
     const snapshots = await Promise.all(brands.map((brand) => checkCitationsRaw(brand, queries)));
 
-    const engines = ["perplexity", "chatgpt", "googleAIO", "bing"] as const;
+    const engines = ["chatgpt", "gemini", "googleAIO", "googleAIMode", "perplexity", "claude"] as const;
     const engineLabels: Record<string, string> = {
       perplexity: "Perplexity",
       chatgpt: "ChatGPT",
       googleAIO: "Google AI Overviews",
-      bing: "Bing/Copilot",
+      googleAIMode: "Google AI Mode",
+      gemini: "Gemini",
+      claude: "Claude",
     };
 
     // Build share-of-voice tables per engine
@@ -94,12 +96,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const pplxCited = snap.perplexity.results.find((r) => r.query === query)?.cited;
         const gptCited = snap.chatgpt.results.find((r) => r.query === query)?.cited;
         const aioCited = snap.googleAIO.results.find((r) => r.query === query)?.cited;
-        const bingCited = snap.bing.results.find((r) => r.query === query)?.cited;
+        const geminiCited = snap.gemini.results.find((r) => r.query === query)?.cited;
+        const claudeCited = snap.claude.results.find((r) => r.query === query)?.cited;
+        const aiModeCited = snap.googleAIMode.results.find((r) => r.query === query)?.cited;
         const engines = [
-          pplxCited ? "Perplexity" : null,
           gptCited ? "ChatGPT" : null,
+          geminiCited ? "Gemini" : null,
           aioCited ? "Google AIO" : null,
-          bingCited ? "Bing" : null,
+          aiModeCited ? "Google AI Mode" : null,
+          pplxCited ? "Perplexity" : null,
+          claudeCited ? "Claude" : null,
         ].filter(Boolean);
         return `  - ${snap.domain}: ${engines.length ? `cited by ${engines.join(", ")}` : "not cited"}`;
       });
@@ -130,7 +136,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const report = [
       `## AI Share of Voice — ${brands.join(" vs ")}`,
-      `Queries: ${queries.length} | Engines: Perplexity, ChatGPT, Google AI Overviews, Bing/Copilot`,
+      `Queries: ${queries.length} | Engines: ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity, Claude`,
       "",
       "### Overall Combined Share",
       "| Brand | Citations | Share of Voice |",
