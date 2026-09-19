@@ -46,9 +46,11 @@ export function perplexityCost(usage: { prompt_tokens?: number; completion_token
   return ((usage?.prompt_tokens ?? 0) * 1 + (usage?.completion_tokens ?? 0) * 1) / 1e6 + 0.005;
 }
 
-/** gpt-4o-mini-search-preview: US$0.15/M input, US$0.60/M output, plus US$27.50 per 1,000 calls for the web search tool (medium context). */
-export function openaiSearchCost(usage: { prompt_tokens?: number; completion_tokens?: number } | undefined): number {
-  return ((usage?.prompt_tokens ?? 0) * 0.15 + (usage?.completion_tokens ?? 0) * 0.6) / 1e6 + 0.0275;
+/** gpt-4.1-mini on the Responses API: US$0.40/M input, US$1.60/M output, plus US$25 per 1,000 web search tool calls. */
+export function openaiSearchCost(usage: { input_tokens?: number; output_tokens?: number; prompt_tokens?: number; completion_tokens?: number } | undefined): number {
+  const inp = usage?.input_tokens ?? usage?.prompt_tokens ?? 0;
+  const out = usage?.output_tokens ?? usage?.completion_tokens ?? 0;
+  return (inp * 0.4 + out * 1.6) / 1e6 + 0.025;
 }
 
 /** Gemini Flash with Google Search grounding: US$0.30/M input, US$2.50/M output, plus US$35 per 1,000 grounded prompts. */
