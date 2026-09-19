@@ -558,24 +558,28 @@ async function queryPplxRaw(question: string, key: string): Promise<{ answer: st
   } catch { return { answer: "", citations: [] }; }
 }
 
+/** ChatGPT via the Responses API with the web search tool (gpt-4o-mini-search-preview was deprecated by 19/09/2026). */
 async function queryGPTRaw(question: string, key: string): Promise<{ answer: string; citations: string[] }> {
+  const model = process.env.OPENAI_SEARCH_MODEL || "gpt-4.1-mini";
   try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const res = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "gpt-4o-mini-search-preview", messages: [{ role: "user", content: question }], max_tokens: 500 }),
-      signal: AbortSignal.timeout(25000),
+      body: JSON.stringify({ model, tools: [{ type: "web_search" }], input: question, max_output_tokens: 700 }),
+      signal: AbortSignal.timeout(40000),
     });
     if (!res.ok) return { answer: "", citations: [] };
     const data = await res.json() as any;
+    if (data?.error) return { answer: "", citations: [] };
     addCost("openai", openaiSearchCost(data.usage));
-    const message = data.choices?.[0]?.message;
-    const answer: string = typeof message?.content === "string" ? message.content : "";
-    const citations: string[] = (message?.annotations ?? [])
+    const messages: any[] = (data.output ?? []).filter((o: any) => o.type === "message");
+    const answer: string = messages.flatMap((m: any) => (m.content ?? []).filter((c: any) => c.type === "output_text").map((c: any) => c.text ?? "")).join("");
+    const citations: string[] = messages
+      .flatMap((m: any) => (m.content ?? []).flatMap((c: any) => c.annotations ?? []))
       .filter((a: any) => a.type === "url_citation")
-      .map((a: any) => a.url_citation?.url ?? "")
+      .map((a: any) => a.url ?? "")
       .filter(Boolean);
-    return { answer, citations };
+    return { answer, citations: [...new Set(citations)] };
   } catch { return { answer: "", citations: [] }; }
 }
 
