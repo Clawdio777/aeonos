@@ -837,8 +837,8 @@ export type CitationSnapshot = {
 };
 
 /** Single-sample check — share-of-voice runs 2–5 brands in parallel, so sampling is kept at 1 to bound cost. */
-export async function checkCitationsRaw(domain: string, queries: string[]): Promise<CitationSnapshot> {
-  const c = await collectCitations(domain, queries, 1);
+export async function checkCitationsRaw(domain: string, queries: string[], samples = 1): Promise<CitationSnapshot> {
+  const c = await collectCitations(domain, queries, samples);
   const all = [...c.pplx, ...c.gpt, ...c.gemini, ...c.claude, ...c.aio, ...c.aimode];
   const allCompetitors = [...new Set(all.flatMap((r) => r.competitors))].slice(0, 8);
   const llmRows = (rows: LlmRow[], engine: string) => rows.map((r) => ({ query: r.query, engine, answer: r.answer, cited: r.cited }));
