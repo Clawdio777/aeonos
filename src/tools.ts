@@ -12,6 +12,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 import { runInspectSiteStructure } from "./inspect.js";
+import { addCost, anthropicCost, perplexityCost, openaiSearchCost, geminiGroundedCost } from "./costs.js";
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 
@@ -419,6 +420,7 @@ ${withText.map((a, i) => `${i + 1}. [${a.engine}] Query: "${a.query}" | Cited: $
       max_tokens: 1024,
       messages: [{ role: "user", content: prompt }],
     });
+    addCost("anthropic", anthropicCost("claude-haiku-4-5-20251001", res.usage));
     const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) return [];
@@ -549,6 +551,7 @@ async function queryPplxRaw(question: string, key: string): Promise<{ answer: st
     });
     if (!res.ok) return { answer: "", citations: [] };
     const data = await res.json() as any;
+    addCost("perplexity", perplexityCost(data.usage));
     const answer: string = data.choices?.[0]?.message?.content ?? "";
     const citations: string[] = (data.citations ?? []).map((c: any) => typeof c === "string" ? c : (c.url ?? "")).filter(Boolean);
     return { answer, citations };
@@ -565,6 +568,7 @@ async function queryGPTRaw(question: string, key: string): Promise<{ answer: str
     });
     if (!res.ok) return { answer: "", citations: [] };
     const data = await res.json() as any;
+    addCost("openai", openaiSearchCost(data.usage));
     const message = data.choices?.[0]?.message;
     const answer: string = typeof message?.content === "string" ? message.content : "";
     const citations: string[] = (message?.annotations ?? [])
@@ -601,6 +605,7 @@ async function queryGoogleAIOverview(query: string): Promise<GoogleAnswer> {
     });
     if (!res.ok) return { text: "", sources: [], shown: false };
     const data = await res.json() as any;
+    addCost("dataforseo", Number(data.tasks?.[0]?.cost) || 0);
     if (data.tasks?.[0]?.status_code !== 20000) return { text: "", sources: [], shown: false };
     const items: any[] = data.tasks?.[0]?.result?.[0]?.items ?? [];
     const aio = items.find((item: any) => item.type === "ai_overview");
@@ -628,6 +633,7 @@ async function queryGoogleAIMode(query: string): Promise<GoogleAnswer> {
     });
     if (!res.ok) return { text: "", sources: [], shown: false };
     const data = await res.json() as any;
+    addCost("dataforseo", Number(data.tasks?.[0]?.cost) || 0);
     if (data.tasks?.[0]?.status_code !== 20000) return { text: "", sources: [], shown: false };
     const items: any[] = data.tasks?.[0]?.result?.[0]?.items ?? [];
     const answer = items.find((item: any) => item.type === "ai_overview" || item.type === "ai_mode");
@@ -654,6 +660,7 @@ async function queryGeminiRaw(question: string, key: string): Promise<{ answer: 
     });
     if (!res.ok) return { answer: "", citations: [] };
     const data = await res.json() as any;
+    addCost("gemini", geminiGroundedCost(data.usageMetadata));
     const cand = data.candidates?.[0];
     const answer: string = (cand?.content?.parts ?? []).map((p: any) => p.text ?? "").join("");
     const citations: string[] = (cand?.groundingMetadata?.groundingChunks ?? [])
@@ -676,6 +683,7 @@ async function queryClaudeRaw(question: string): Promise<{ answer: string; citat
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 } as any],
       messages: [{ role: "user", content: question }],
     });
+    addCost("anthropic", anthropicCost("claude-haiku-4-5-20251001", res.usage as any));
     const blocks: any[] = res.content as any[];
     const answer = blocks.filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
     const citations: string[] = [];

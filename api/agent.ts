@@ -197,6 +197,8 @@ async function handleSync(
     },
     tool_calls: result.tool_calls_made,
     tokens: result.tokens_used,
+    costs: result.costs,
+    cost_usd: result.cost_usd,
     query_count: queryCount + 1,
   };
 
