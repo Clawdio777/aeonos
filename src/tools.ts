@@ -376,6 +376,8 @@ type CitRow = {
   citedSamples: number;
   samples: number;       // successful samples only — failed/rate-limited calls are dropped, never counted as "not cited"
   competitors: string[];
+  /** Full URLs of the pages cited instead of the domain: the outreach target list (19/09/2026). */
+  competitorUrls: string[];
   sources: string[];
 };
 
@@ -426,16 +428,17 @@ ${withText.map((a, i) => `${i + 1}. [${a.engine}] Query: "${a.query}" | Cited: $
   }
 }
 
-function extractCitationResult(domain: string, answer: string, citations: string[]): { cited: boolean; competitors: string[]; sources: string[] } {
+function extractCitationResult(domain: string, answer: string, citations: string[]): { cited: boolean; competitors: string[]; competitorUrls: string[]; sources: string[] } {
   const domainClean = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
   const rx = new RegExp(domainClean.replace(".", "\\."), "i");
   const cited = rx.test(answer) || citations.some((c) => rx.test(c));
+  const competitorUrls = citations.filter((c) => !rx.test(c) && /^https?:\/\//.test(c)).filter((v, i, a) => a.indexOf(v) === i).slice(0, 6);
   const competitors = citations
     .filter((c) => !rx.test(c))
     .map((c) => { try { return new URL(c).hostname; } catch { return c; } })
     .filter((v, i, a) => a.indexOf(v) === i)
     .slice(0, 4);
-  return { cited, competitors, sources: cited ? citations.filter((c) => rx.test(c)) : [] };
+  return { cited, competitors, competitorUrls, sources: cited ? citations.filter((c) => rx.test(c)) : [] };
 }
 
 type LlmRun = { answer: string; citations: string[] };
@@ -455,6 +458,7 @@ async function sampleLlm(domain: string, query: string, n: number, run: () => Pr
     citedSamples,
     samples: runs.length,
     competitors: [...new Set(rows.flatMap((r) => r.competitors))].slice(0, 4),
+    competitorUrls: [...new Set(rows.flatMap((r) => r.competitorUrls))].slice(0, 6),
     sources: [...new Set(rows.flatMap((r) => r.sources))],
     answer: runs[0].answer,
   };
@@ -532,8 +536,8 @@ function engineStats(rows: CitRow[]): EngineStats {
   return { cited: rows.filter((r) => r.cited).length, total: rows.length, citedSamples, samples, rate: samples ? Math.round((citedSamples / samples) * 100) : 0 };
 }
 
-const stripAnswer = ({ query, cited, citedSamples, samples, competitors, sources }: CitRow): CitRow =>
-  ({ query, cited, citedSamples, samples, competitors, sources });
+const stripAnswer = ({ query, cited, citedSamples, samples, competitors, competitorUrls, sources }: CitRow): CitRow =>
+  ({ query, cited, citedSamples, samples, competitors, competitorUrls, sources });
 
 async function queryPplxRaw(question: string, key: string): Promise<{ answer: string; citations: string[] }> {
   try {
@@ -785,7 +789,7 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
     `Method: ${samples} samples per query on ChatGPT, Gemini and Perplexity (Claude up to 3), one fetch per query for Google AI Overviews and AI Mode (✅ = cited in a majority of samples); a change under ~${Math.round(100 / Math.sqrt(maxSamples))}pp between runs is within sampling noise. Engines marked NOT SAMPLED returned nothing and must be reported as unknown, never as 0%. Bing/Copilot is not measured (no reliable source).`,
     "",
     ...engines.flatMap((e) => e.rows.map((r) =>
-      `${r.cited ? "✅" : "❌"} [${e.label}] "${r.query}"${sampleNote(r)}\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Cited instead: ${r.competitors.join(", ") || "none identified"}`}`
+      `${r.cited ? "✅" : "❌"} [${e.label}] "${r.query}"${sampleNote(r)}\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Cited instead: ${(r.competitorUrls.length ? r.competitorUrls : r.competitors).join(", ") || "none identified"}`}`
     )),
     "",
     allCompetitors.length ? `Competitor domains appearing instead: ${allCompetitors.join(", ")}` : "",
