@@ -371,6 +371,14 @@ async function runStoreCallerMemory(input: Record<string, any>): Promise<string>
 
 // ── Live Citation Checker ──────────────────────────────────────────────────────
 
+/**
+ * What the answer actually did with the domain's name (25/09/2026). "Cited" alone is not a win:
+ * a third of AI mentions in a 29,500-answer study were neutral or warnings. recommended = named as
+ * an option the reader should consider; mentioned = named in passing or as one of a list with no
+ * endorsement; warned = named with caveats, complaints, or the reader steered elsewhere.
+ */
+export type Stance = "recommended" | "mentioned" | "warned";
+
 type CitRow = {
   query: string;
   cited: boolean;        // majority of successful samples cited the domain
@@ -380,6 +388,8 @@ type CitRow = {
   /** Full URLs of the pages cited instead of the domain: the outreach target list (19/09/2026). */
   competitorUrls: string[];
   sources: string[];
+  /** Set only when cited; null when the classifier could not read the answer. */
+  stance?: Stance | null;
 };
 
 // Perplexity/ChatGPT answers are non-deterministic, so one sample per query is noise.
@@ -430,6 +440,46 @@ ${withText.map((a, i) => `${i + 1}. [${a.engine}] Query: "${a.query}" | Cited: $
   }
 }
 
+type StanceResult = { query: string; engine: string; stance: Stance };
+
+/** One Haiku call for every answer that named the domain: did it recommend, merely mention, or warn? */
+async function classifyStance(
+  domain: string,
+  answers: { query: string; engine: string; answer: string }[]
+): Promise<StanceResult[]> {
+  const withText = answers.filter((a) => a.answer.length > 40);
+  if (!withText.length) return [];
+
+  const prompt = `Each AI search answer below names the business "${domain}". Decide what the answer did with that name.
+
+- "recommended": presents ${domain} as an option the reader should consider or choose (listed as a pick, "best for", "worth trying", "we recommend", top of a list, or described favourably).
+- "mentioned": ${domain} appears in passing, as one of many with no endorsement, as background, or only as a source link.
+- "warned": ${domain} is named with caveats, complaints, comparisons that favour others, or the reader is steered away.
+
+Judge only what the answer says about ${domain}. Return ONLY a JSON array, one element per answer, in order:
+[{"query":"...","engine":"...","stance":"recommended"|"mentioned"|"warned"}]
+
+Answers:
+${withText.map((a, i) => `${i + 1}. [${a.engine}] Query: "${a.query}"\nAnswer: ${a.answer.slice(0, 900)}`).join("\n\n")}`;
+
+  try {
+    const res = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1024,
+      messages: [{ role: "user", content: prompt }],
+    });
+    addCost("anthropic", anthropicCost("claude-haiku-4-5-20251001", res.usage));
+    const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) return [];
+    const parsed = JSON.parse(jsonMatch[0]) as Partial<StanceResult>[];
+    return parsed
+      .filter((p): p is StanceResult => typeof p.query === "string" && typeof p.engine === "string" && (p.stance === "recommended" || p.stance === "mentioned" || p.stance === "warned"));
+  } catch {
+    return [];
+  }
+}
+
 function extractCitationResult(domain: string, answer: string, citations: string[]): { cited: boolean; competitors: string[]; competitorUrls: string[]; sources: string[] } {
   const domainClean = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
   const rx = new RegExp(domainClean.replace(".", "\\."), "i");
@@ -466,14 +516,14 @@ async function sampleLlm(domain: string, query: string, n: number, run: () => Pr
   };
 }
 
-function serpRow(domain: string, query: string, text: string, sources: string[]): CitRow {
+function serpRow(domain: string, query: string, text: string, sources: string[]): LlmRow {
   const r = extractCitationResult(domain, text, sources);
-  return { ...r, query, citedSamples: r.cited ? 1 : 0, samples: 1 };
+  return { ...r, query, citedSamples: r.cited ? 1 : 0, samples: 1, answer: text };
 }
 
 type Collected = {
   pplx: LlmRow[]; gpt: LlmRow[]; gemini: LlmRow[]; claude: LlmRow[];
-  aio: CitRow[]; aimode: CitRow[];
+  aio: LlmRow[]; aimode: LlmRow[];
   /** Engines that produced no data this run, with the reason. Reported as "not sampled", never as 0%. */
   unavailable: Record<string, string>;
 };
@@ -538,8 +588,8 @@ function engineStats(rows: CitRow[]): EngineStats {
   return { cited: rows.filter((r) => r.cited).length, total: rows.length, citedSamples, samples, rate: samples ? Math.round((citedSamples / samples) * 100) : 0 };
 }
 
-const stripAnswer = ({ query, cited, citedSamples, samples, competitors, competitorUrls, sources }: CitRow): CitRow =>
-  ({ query, cited, citedSamples, samples, competitors, competitorUrls, sources });
+const stripAnswer = ({ query, cited, citedSamples, samples, competitors, competitorUrls, sources, stance }: CitRow): CitRow =>
+  ({ query, cited, citedSamples, samples, competitors, competitorUrls, sources, stance: cited ? (stance ?? null) : undefined });
 
 async function queryPplxRaw(question: string, key: string): Promise<{ answer: string; citations: string[] }> {
   try {
@@ -845,14 +895,28 @@ export async function checkCitationsRaw(domain: string, queries: string[], sampl
   const sentiment = await classifyAnswerSentiment(domain, [
     ...llmRows(c.pplx, "perplexity"), ...llmRows(c.gpt, "chatgpt"), ...llmRows(c.gemini, "gemini"), ...llmRows(c.claude, "claude"),
   ]);
+
+  // Stance for every row that named the domain, across all six engines (Google surfaces included).
+  const engineRows: [string, LlmRow[]][] = [
+    ["perplexity", c.pplx], ["chatgpt", c.gpt], ["gemini", c.gemini], ["claude", c.claude], ["google_ai_overviews", c.aio], ["google_ai_mode", c.aimode],
+  ];
+  const citedAnswers = engineRows.flatMap(([engine, rows]) => rows.filter((r) => r.cited).map((r) => ({ query: r.query, engine, answer: r.answer })));
+  const stances = await classifyStance(domain, citedAnswers);
+  for (const [engine, rows] of engineRows) {
+    for (const r of rows) {
+      if (!r.cited) continue;
+      r.stance = stances.find((s) => s.engine === engine && s.query.trim().toLowerCase() === r.query.trim().toLowerCase())?.stance ?? null;
+    }
+  }
+
   return {
     domain,
     perplexity: { ...engineStats(c.pplx), results: c.pplx.map(stripAnswer) },
     chatgpt: { ...engineStats(c.gpt), results: c.gpt.map(stripAnswer) },
     gemini: { ...engineStats(c.gemini), results: c.gemini.map(stripAnswer) },
     claude: { ...engineStats(c.claude), results: c.claude.map(stripAnswer) },
-    googleAIO: { ...engineStats(c.aio), results: c.aio },
-    googleAIMode: { ...engineStats(c.aimode), results: c.aimode },
+    googleAIO: { ...engineStats(c.aio), results: c.aio.map(stripAnswer) },
+    googleAIMode: { ...engineStats(c.aimode), results: c.aimode.map(stripAnswer) },
     unavailable: c.unavailable,
     competitors: allCompetitors,
     sentiment,
