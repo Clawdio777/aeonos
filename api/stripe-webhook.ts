@@ -91,7 +91,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 }
 </pre>
 <p>Or use the PayGated MCP endpoint directly:<br>
-<code>https://aeonos-paygate.up.railway.app/mcp</code><br>
+<code>https://paygate-aeonos-production.up.railway.app/mcp</code><br>
 Header: <code>X-Api-Key: ${apiKey}</code></p>
 <p style="color:#888;font-size:13px;">Credits are consumed per tool call. Check your balance at: <a href="${pgUrl}/keys/${apiKey}/balance">balance check</a></p>
         `.trim(),
