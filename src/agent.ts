@@ -140,7 +140,7 @@ async function runAgentInner(input: AgentQuery): Promise<Omit<AgentResponse, "co
     iterations++;
 
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-5",
       // Allow more output tokens on the synthesis pass so a full audit fits.
       max_tokens: forceSynthesis ? 16000 : 8192,
       system: systemPrompt,
@@ -150,7 +150,7 @@ async function runAgentInner(input: AgentQuery): Promise<Omit<AgentResponse, "co
     });
 
     totalTokens += response.usage.input_tokens + response.usage.output_tokens;
-    addCost("anthropic", anthropicCost("claude-sonnet-4-6", response.usage));
+    addCost("anthropic", anthropicCost("claude-sonnet-5", response.usage));
 
     // Accept both clean end_turn and max_tokens (partial but still useful for long audits).
     if (response.stop_reason === "end_turn" || response.stop_reason === "max_tokens") {
