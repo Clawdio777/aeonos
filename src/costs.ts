@@ -29,13 +29,14 @@ export function totalCost(costs: CostStore): number {
 // USD per million tokens (input, output). Update when Anthropic changes prices.
 const ANTHROPIC_PRICES: Record<string, [number, number]> = {
   "claude-haiku-4-5-20251001": [1, 5],
+  "claude-sonnet-5": [2, 10],
   "claude-sonnet-4-6": [3, 15],
-  "claude-opus-5": [15, 75],
+  "claude-opus-5": [5, 25],
 };
 
 export function anthropicCost(model: string, usage: { input_tokens?: number; output_tokens?: number; server_tool_use?: { web_search_requests?: number } } | undefined): number {
   if (!usage) return 0;
-  const [inP, outP] = ANTHROPIC_PRICES[model] ?? ANTHROPIC_PRICES["claude-sonnet-4-6"];
+  const [inP, outP] = ANTHROPIC_PRICES[model] ?? ANTHROPIC_PRICES["claude-sonnet-5"];
   const tokens = ((usage.input_tokens ?? 0) * inP + (usage.output_tokens ?? 0) * outP) / 1e6;
   const searches = (usage.server_tool_use?.web_search_requests ?? 0) * 0.01; // US$10 per 1,000 web searches
   return tokens + searches;
