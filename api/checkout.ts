@@ -55,6 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     "line_items[0][quantity]":                           "1",
     "mode":                                              "payment",
     "customer_creation":                                 "always",
+    "allow_promotion_codes":                             "true", // test/operator codes (28/09/2026)
     "success_url":                                       `${BASE_URL}/?checkout=success&key=${apiKey}&pack=${pack}`,
     "cancel_url":                                        `${BASE_URL}/#get-access`,
     "metadata[agent]":                                   "aeonos",
