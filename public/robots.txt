@@ -1,0 +1,8 @@
+# Public marketing pages are crawlable. Private API routes are not.
+# AI crawlers are allowed on the public site.
+
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://aeonos.basechainlabs.com/sitemap.xml
