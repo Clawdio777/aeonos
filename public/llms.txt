@@ -1,0 +1,38 @@
+# AEONOS
+
+> AEONOS is the agent-callable execution layer for answer engine optimisation (AEO) and generative engine optimisation (GEO). It makes a website citable by ChatGPT, Perplexity, Claude, and Google AI Overviews.
+
+Host: aeonos.basechainlabs.com
+
+Pemba is the managed AEO service for small and medium businesses. AEONOS is the agent-callable execution layer: agents call it to run audits, schema, llms.txt, and citation work.
+
+## Install
+
+```
+npx aeonos-mcp
+```
+
+## Capabilities
+
+- AEO strategy audit: AI readiness score with a P1/P2/P3 roadmap
+- JSON-LD schema: production-ready Schema.org markup
+- llms.txt: a deploy-ready file for AI crawlers
+- Progress report: Four Layers scorecard (SXO, AIO, GEO, AEO)
+- Agent query: citation tactics, quick wins, and keyword strategy
+- Persistent memory: site context kept across calls when a caller id is supplied
+
+## Pricing
+
+Pay per call in USDC on Base via x402, or with card credits. 1 credit = $0.01 USD. Credits do not expire.
+
+- aeonos_query: 0.05 USDC, or 5 credits
+- aeonos_schema: 0.50 USDC, or 50 credits
+- aeonos_llms_txt: 0.50 USDC, or 50 credits
+- aeonos_progress: 1.50 USDC, or 75 credits
+- aeonos_audit: 2.50 USDC, or 100 credits
+
+## Pages
+
+- [Home](https://aeonos.basechainlabs.com/): product overview, capabilities, and pricing
+- [SKILL.md](https://aeonos.basechainlabs.com/SKILL.md): agent skill card, endpoints, and request format
+- [Agent card](https://aeonos.basechainlabs.com/.well-known/agent.json): A2A discovery card
