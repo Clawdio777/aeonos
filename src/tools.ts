@@ -390,6 +390,20 @@ type CitRow = {
   sources: string[];
   /** Set only when cited; null when the classifier could not read the answer. */
   stance?: Stance | null;
+  /** Samples that named the business without linking its domain. They count as cited (06/10/2026). */
+  namedSamples?: number;
+  /** Full text of every sampled answer, only when the caller asks for include_answers (06/10/2026). */
+  answers?: string[];
+};
+
+/** Options for Pemba's direct citation check (06/10/2026). */
+export type CitationOptions = {
+  /** Business name: an answer that names it without the web address still counts as cited. */
+  brandName?: string;
+  /** DataForSEO location for Google AI Overviews and AI Mode. Default 2840 (United States). */
+  locationCode?: number;
+  /** Return every sampled answer's full text so it can be read later. */
+  includeAnswers?: boolean;
 };
 
 // Perplexity/ChatGPT answers are non-deterministic, so one sample per query is noise.
@@ -480,29 +494,38 @@ ${withText.map((a, i) => `${i + 1}. [${a.engine}] Query: "${a.query}"\nAnswer: $
   }
 }
 
-function extractCitationResult(domain: string, answer: string, citations: string[]): { cited: boolean; competitors: string[]; competitorUrls: string[]; sources: string[] } {
+/** Whole-word, case-insensitive match for a business name; null when the name is too short to match safely. */
+function brandRegex(brandName?: string): RegExp | null {
+  const name = brandName?.trim();
+  if (!name || name.length < 3) return null;
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\p{L}\\p{N}])`, "iu");
+}
+
+function extractCitationResult(domain: string, answer: string, citations: string[], brand: RegExp | null = null): { cited: boolean; named: boolean; competitors: string[]; competitorUrls: string[]; sources: string[] } {
   const domainClean = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
   const rx = new RegExp(domainClean.replace(".", "\\."), "i");
-  const cited = rx.test(answer) || citations.some((c) => rx.test(c));
+  const linked = rx.test(answer) || citations.some((c) => rx.test(c));
+  const named = !linked && !!brand && brand.test(answer);
+  const cited = linked || named;
   const competitorUrls = citations.filter((c) => !rx.test(c) && /^https?:\/\//.test(c)).filter((v, i, a) => a.indexOf(v) === i).slice(0, 6);
   const competitors = citations
     .filter((c) => !rx.test(c))
     .map((c) => { try { return new URL(c).hostname; } catch { return c; } })
     .filter((v, i, a) => a.indexOf(v) === i)
     .slice(0, 4);
-  return { cited, competitors, competitorUrls, sources: cited ? citations.filter((c) => rx.test(c)) : [] };
+  return { cited, named, competitors, competitorUrls, sources: linked ? citations.filter((c) => rx.test(c)) : [] };
 }
 
 type LlmRun = { answer: string; citations: string[] };
 type LlmRow = CitRow & { answer: string };
 
 /** Run n samples of one LLM engine for one query and fold them into a single row. Empty responses are failed calls and are dropped. */
-async function sampleLlm(domain: string, query: string, n: number, run: () => Promise<LlmRun>): Promise<LlmRow | null> {
+async function sampleLlm(domain: string, query: string, n: number, run: () => Promise<LlmRun>, brand: RegExp | null = null): Promise<LlmRow | null> {
   const runs = (await Promise.allSettled(Array.from({ length: n }, run)))
     .filter((r): r is PromiseFulfilledResult<LlmRun> => r.status === "fulfilled" && (r.value.answer.length > 0 || r.value.citations.length > 0))
     .map((r) => r.value);
   if (!runs.length) return null;
-  const rows = runs.map((r) => extractCitationResult(domain, r.answer, r.citations));
+  const rows = runs.map((r) => extractCitationResult(domain, r.answer, r.citations, brand));
   const citedSamples = rows.filter((r) => r.cited).length;
   return {
     query,
@@ -512,13 +535,15 @@ async function sampleLlm(domain: string, query: string, n: number, run: () => Pr
     competitors: [...new Set(rows.flatMap((r) => r.competitors))].slice(0, 4),
     competitorUrls: [...new Set(rows.flatMap((r) => r.competitorUrls))].slice(0, 6),
     sources: [...new Set(rows.flatMap((r) => r.sources))],
+    namedSamples: rows.filter((r) => r.named).length,
     answer: runs[0].answer,
+    answers: runs.map((r) => r.answer),
   };
 }
 
-function serpRow(domain: string, query: string, text: string, sources: string[]): LlmRow {
-  const r = extractCitationResult(domain, text, sources);
-  return { ...r, query, citedSamples: r.cited ? 1 : 0, samples: 1, answer: text };
+function serpRow(domain: string, query: string, text: string, sources: string[], brand: RegExp | null = null): LlmRow {
+  const { named, ...r } = extractCitationResult(domain, text, sources, brand);
+  return { ...r, query, citedSamples: r.cited ? 1 : 0, samples: 1, namedSamples: named ? 1 : 0, answer: text, answers: [text] };
 }
 
 type Collected = {
@@ -531,7 +556,9 @@ type Collected = {
 // Engine tiers (19/09/2026, per referral-share studies): Tier 1 ChatGPT, Google AI Overviews + AI Mode, Gemini.
 // Tier 2 Perplexity, Claude. Bing/Copilot is NOT sampled: the Bing SERP proxy (DataForSEO) returned unrelated
 // results for every query on 19/09/2026 and Copilot has no answer API, so reporting it would be fiction.
-async function collectCitations(domain: string, queries: string[], samples: number): Promise<Collected> {
+async function collectCitations(domain: string, queries: string[], samples: number, opts: CitationOptions = {}): Promise<Collected> {
+  const brand = brandRegex(opts.brandName);
+  const loc = opts.locationCode;
   const pplxKey = process.env.PPLX_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;
@@ -546,20 +573,20 @@ async function collectCitations(domain: string, queries: string[], samples: numb
     for (let query = queue.shift(); query !== undefined; query = queue.shift()) {
       const q = query;
       const [pplx, gpt, gemini, claude, aio, aimode] = await Promise.allSettled([
-        pplxKey ? (attempted.pplx++, sampleLlm(domain, q, samples, () => queryPplxRaw(q, pplxKey))) : Promise.resolve(null),
-        openaiKey ? (attempted.gpt++, sampleLlm(domain, q, samples, () => queryGPTRaw(q, openaiKey))) : Promise.resolve(null),
-        geminiKey ? (attempted.gemini++, sampleLlm(domain, q, samples, () => queryGeminiRaw(q, geminiKey))) : Promise.resolve(null),
-        claudeKey ? (attempted.claude++, sampleLlm(domain, q, Math.min(samples, 2), () => queryClaudeRaw(q))) : Promise.resolve(null),
-        hasDFS ? (attempted.aio++, queryGoogleAIOverview(q)) : Promise.resolve({ text: "", sources: [], shown: false }),
-        hasDFS ? (attempted.aimode++, queryGoogleAIMode(q)) : Promise.resolve({ text: "", sources: [], shown: false }),
+        pplxKey ? (attempted.pplx++, sampleLlm(domain, q, samples, () => queryPplxRaw(q, pplxKey), brand)) : Promise.resolve(null),
+        openaiKey ? (attempted.gpt++, sampleLlm(domain, q, samples, () => queryGPTRaw(q, openaiKey), brand)) : Promise.resolve(null),
+        geminiKey ? (attempted.gemini++, sampleLlm(domain, q, samples, () => queryGeminiRaw(q, geminiKey), brand)) : Promise.resolve(null),
+        claudeKey ? (attempted.claude++, sampleLlm(domain, q, Math.min(samples, 2), () => queryClaudeRaw(q), brand)) : Promise.resolve(null),
+        hasDFS ? (attempted.aio++, queryGoogleAIOverview(q, loc)) : Promise.resolve({ text: "", sources: [], shown: false }),
+        hasDFS ? (attempted.aimode++, queryGoogleAIMode(q, loc)) : Promise.resolve({ text: "", sources: [], shown: false }),
       ]);
       if (pplx.status === "fulfilled" && pplx.value) out.pplx.push(pplx.value);
       if (gpt.status === "fulfilled" && gpt.value) out.gpt.push(gpt.value);
       if (gemini.status === "fulfilled" && gemini.value) out.gemini.push(gemini.value);
       if (claude.status === "fulfilled" && claude.value) out.claude.push(claude.value);
       // Google surfaces: a fetched SERP with no AI answer is a genuine "not shown" and counts as not cited
-      if (aio.status === "fulfilled" && aio.value.shown) out.aio.push(serpRow(domain, q, aio.value.text, aio.value.sources));
-      if (aimode.status === "fulfilled" && aimode.value.shown) out.aimode.push(serpRow(domain, q, aimode.value.text, aimode.value.sources));
+      if (aio.status === "fulfilled" && aio.value.shown) out.aio.push(serpRow(domain, q, aio.value.text, aio.value.sources, brand));
+      if (aimode.status === "fulfilled" && aimode.value.shown) out.aimode.push(serpRow(domain, q, aimode.value.text, aimode.value.sources, brand));
     }
   };
   await Promise.all(Array.from({ length: Math.min(QUERY_CONCURRENCY, ordered.length) }, worker));
@@ -588,8 +615,11 @@ function engineStats(rows: CitRow[]): EngineStats {
   return { cited: rows.filter((r) => r.cited).length, total: rows.length, citedSamples, samples, rate: samples ? Math.round((citedSamples / samples) * 100) : 0 };
 }
 
-const stripAnswer = ({ query, cited, citedSamples, samples, competitors, competitorUrls, sources, stance }: CitRow): CitRow =>
-  ({ query, cited, citedSamples, samples, competitors, competitorUrls, sources, stance: cited ? (stance ?? null) : undefined });
+const stripAnswer = ({ query, cited, citedSamples, samples, competitors, competitorUrls, sources, stance, namedSamples }: CitRow): CitRow =>
+  ({ query, cited, citedSamples, samples, competitors, competitorUrls, sources, stance: cited ? (stance ?? null) : undefined, namedSamples });
+
+/** stripAnswer, keeping every sampled answer's text when the caller asked for it. */
+const rowOut = (includeAnswers?: boolean) => (r: CitRow): CitRow => includeAnswers ? { ...stripAnswer(r), answers: r.answers ?? [] } : stripAnswer(r);
 
 async function queryPplxRaw(question: string, key: string): Promise<{ answer: string; citations: string[] }> {
   try {
@@ -647,14 +677,14 @@ function dfsAuth(): string | null {
 }
 
 /** Google AI Overview for the query. The /regular endpoint never returned one; /advanced with load_async_ai_overview does. */
-async function queryGoogleAIOverview(query: string): Promise<GoogleAnswer> {
+async function queryGoogleAIOverview(query: string, locationCode = 2840): Promise<GoogleAnswer> {
   const auth = dfsAuth();
   if (!auth) return { text: "", sources: [], shown: false };
   try {
     const res = await fetch("https://api.dataforseo.com/v3/serp/google/organic/live/advanced", {
       method: "POST",
       headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
-      body: JSON.stringify([{ keyword: query, location_code: 2840, language_code: "en", device: "desktop", depth: 10, load_async_ai_overview: true }]),
+      body: JSON.stringify([{ keyword: query, location_code: locationCode, language_code: "en", device: "desktop", depth: 10, load_async_ai_overview: true }]),
       signal: AbortSignal.timeout(20000),
     });
     if (!res.ok) return { text: "", sources: [], shown: false };
@@ -675,14 +705,14 @@ async function queryGoogleAIOverview(query: string): Promise<GoogleAnswer> {
 }
 
 /** Google AI Mode answer for the query (DataForSEO serp/google/ai_mode). */
-async function queryGoogleAIMode(query: string): Promise<GoogleAnswer> {
+async function queryGoogleAIMode(query: string, locationCode = 2840): Promise<GoogleAnswer> {
   const auth = dfsAuth();
   if (!auth) return { text: "", sources: [], shown: false };
   try {
     const res = await fetch("https://api.dataforseo.com/v3/serp/google/ai_mode/live/advanced", {
       method: "POST",
       headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
-      body: JSON.stringify([{ keyword: query, location_code: 2840, language_code: "en" }]),
+      body: JSON.stringify([{ keyword: query, location_code: locationCode, language_code: "en" }]),
       signal: AbortSignal.timeout(20000),
     });
     if (!res.ok) return { text: "", sources: [], shown: false };
@@ -887,8 +917,9 @@ export type CitationSnapshot = {
 };
 
 /** Single-sample check — share-of-voice runs 2–5 brands in parallel, so sampling is kept at 1 to bound cost. */
-export async function checkCitationsRaw(domain: string, queries: string[], samples = 1): Promise<CitationSnapshot> {
-  const c = await collectCitations(domain, queries, samples);
+export async function checkCitationsRaw(domain: string, queries: string[], samples = 1, opts: CitationOptions = {}): Promise<CitationSnapshot> {
+  const c = await collectCitations(domain, queries, samples, opts);
+  const out = rowOut(opts.includeAnswers);
   const all = [...c.pplx, ...c.gpt, ...c.gemini, ...c.claude, ...c.aio, ...c.aimode];
   const allCompetitors = [...new Set(all.flatMap((r) => r.competitors))].slice(0, 8);
   const llmRows = (rows: LlmRow[], engine: string) => rows.map((r) => ({ query: r.query, engine, answer: r.answer, cited: r.cited }));
@@ -911,12 +942,12 @@ export async function checkCitationsRaw(domain: string, queries: string[], sampl
 
   return {
     domain,
-    perplexity: { ...engineStats(c.pplx), results: c.pplx.map(stripAnswer) },
-    chatgpt: { ...engineStats(c.gpt), results: c.gpt.map(stripAnswer) },
-    gemini: { ...engineStats(c.gemini), results: c.gemini.map(stripAnswer) },
-    claude: { ...engineStats(c.claude), results: c.claude.map(stripAnswer) },
-    googleAIO: { ...engineStats(c.aio), results: c.aio.map(stripAnswer) },
-    googleAIMode: { ...engineStats(c.aimode), results: c.aimode.map(stripAnswer) },
+    perplexity: { ...engineStats(c.pplx), results: c.pplx.map(out) },
+    chatgpt: { ...engineStats(c.gpt), results: c.gpt.map(out) },
+    gemini: { ...engineStats(c.gemini), results: c.gemini.map(out) },
+    claude: { ...engineStats(c.claude), results: c.claude.map(out) },
+    googleAIO: { ...engineStats(c.aio), results: c.aio.map(out) },
+    googleAIMode: { ...engineStats(c.aimode), results: c.aimode.map(out) },
     unavailable: c.unavailable,
     competitors: allCompetitors,
     sentiment,
