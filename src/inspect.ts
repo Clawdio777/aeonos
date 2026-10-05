@@ -702,8 +702,16 @@ function analyzeConversational(
 const AI_BOTS = [
   "GPTBot",
   "ChatGPT-User",
+  "OAI-SearchBot",
   "ClaudeBot",
+  "Claude-SearchBot",
+  "Claude-User",
   "PerplexityBot",
+  "Perplexity-User",
+  // Google AI Overviews and AI Mode draw on Google's index; ChatGPT search draws on Bing's (06/10/2026).
+  "Googlebot",
+  "Bingbot",
+  "Google-Extended",
   "Applebot",
   "GoogleOther",
   "CCBot",
