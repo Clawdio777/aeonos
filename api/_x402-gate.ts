@@ -48,16 +48,20 @@ export function isPlaceholderCall(query: string, caller_id: string): boolean {
   return PLACEHOLDER_CALLER_IDS.has(caller_id.toLowerCase()) || PLACEHOLDER_DOMAIN.test(query);
 }
 
-export function withPlaceholderNotice(text: string, query: string, caller_id: string, endpoint: string): string {
+export function withPlaceholderNotice(
+  text: string, query: string, caller_id: string, endpoint: string,
+  /** Override the resend body and real-result sample for routes whose body is not a single query string. */
+  opts: { resendBody?: string; sample?: string } = {},
+): string {
   if (!isPlaceholderCall(query, caller_id)) return text;
   const why = PLACEHOLDER_DOMAIN.test(query)
     ? "a placeholder site such as mysite.com), so the result below is not about your site."
     : `caller_id \`${caller_id}\`), which is shared by everyone who copies the example, so AEONOS cannot keep your site's history separate.`;
   return [
     `> **Heads up: this request used the example values from our listing** (${why}`,
-    `> To get a real result, resend to \`POST ${endpoint}\` with your own URL and a stable caller_id, e.g. \`{"query": "Audit https://yourdomain.com for AI search visibility", "caller_id": "yourdomain.com"}\`.`,
+    `> To get a real result, resend to \`POST ${endpoint}\` with your own URL and a stable caller_id, e.g. \`${opts.resendBody ?? '{"query": "Audit https://yourdomain.com for AI search visibility", "caller_id": "yourdomain.com"}'}\`.`,
     "> Reuse the same caller_id on every call: AEONOS remembers your site, keywords and past audits for that id.",
-    "> With a real URL you get results for your actual pages, e.g. a 0-100 AI visibility score with a P1/P2/P3 fix list.",
+    `> ${opts.sample ?? "With a real URL you get results for your actual pages, e.g. a 0-100 AI visibility score with a P1/P2/P3 fix list."}`,
     "",
     text,
   ].join("\n");
