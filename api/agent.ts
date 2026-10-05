@@ -22,6 +22,7 @@ import { x402Version as X402_VERSION } from "@x402/core";
 import { createFacilitatorConfig } from "@coinbase/x402";
 import { declareDiscoveryExtension } from "@x402/extensions";
 import { runAgent } from "../src/agent.js";
+import { withPlaceholderNotice, DISCOVERY_CALLER_ID_EXAMPLE } from "./_x402-gate.js";
 
 // ── Coinbase CDP facilitator for Base mainnet ──────────────────────────────────
 // .trim() is critical — Vercel env vars can have trailing newlines
@@ -35,6 +36,7 @@ const facilitatorClient = new HTTPFacilitatorClient(
 );
 
 const PRICE_PER_QUERY_USDC = 0.05;
+const AGENT_URL = () => `${process.env.AGENT_BASE_URL || "https://aeonos.basechainlabs.com"}/api/agent`;
 
 const db = createClient(
   process.env.SUPABASE_URL!,
@@ -192,7 +194,7 @@ async function handleSync(
   const body = {
     status: "completed",
     artifact: {
-      parts: [{ type: "text", text: result.response }],
+      parts: [{ type: "text", text: withPlaceholderNotice(result.response, query, caller_id, AGENT_URL()) }],
       index: 0,
     },
     tool_calls: result.tool_calls_made,
@@ -245,7 +247,7 @@ async function handleAsync(
       status: "completed",
       result: {
         artifact: {
-          parts: [{ type: "text", text: result.response }],
+          parts: [{ type: "text", text: withPlaceholderNotice(result.response, query, caller_id, AGENT_URL()) }],
           index: 0,
         },
         tool_calls: result.tool_calls_made,
@@ -322,7 +324,7 @@ async function handleStream(
     send({
       status: "completed",
       artifact: {
-        parts: [{ type: "text", text: result.response }],
+        parts: [{ type: "text", text: withPlaceholderNotice(result.response, query, caller_id, AGENT_URL()) }],
         index: 0,
       },
       tool_calls: result.tool_calls_made,
@@ -410,23 +412,23 @@ function buildPaymentRequirements(_req: VercelRequest): PaymentRequirements {
 const _bazaarBase = declareDiscoveryExtension({
   bodyType: "json",
   input: {
-    query: "Audit mysite.com for AI search visibility and get a P1/P2/P3 action plan",
-    caller_id: "my-agent-id",
+    query: "Audit https://YOUR-SITE.com for AI search visibility and get a P1/P2/P3 action plan",
+    caller_id: DISCOVERY_CALLER_ID_EXAMPLE,
   },
   inputSchema: {
     properties: {
       query: {
         type: "string",
         description:
-          "AEO/GEO question or URL to audit. Examples: 'Audit mysite.com for AI visibility', " +
+          "AEO/GEO question or your real URL to audit (replace YOUR-SITE.com). Examples: 'Audit https://yourdomain.com for AI visibility', " +
           "'Write an llms.txt for my SaaS', 'Generate JSON-LD schema for my pricing page', " +
           "'Score my site on the AEONOS 5-pillar AI inclusion check'",
       },
       caller_id: {
         type: "string",
         description:
-          "Optional agent or user ID. AEONOS stores persistent memory per caller — " +
-          "site URL, keywords, and audit history are remembered across sessions.",
+          "Stable ID for your agent or the site you are working on (e.g. your domain); replace the example value. " +
+          "AEONOS stores persistent memory per caller_id: site URL, keywords, and audit history are remembered across sessions.",
       },
     },
     required: ["query"],

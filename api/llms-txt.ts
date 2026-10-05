@@ -8,7 +8,7 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { requirePayment, buildPaymentReqs, buildBazaarExtension, send402 } from "./_x402-gate.js";
+import { withPlaceholderNotice, requirePayment, buildPaymentReqs, buildBazaarExtension, send402 } from "./_x402-gate.js";
 import { runAgent } from "../src/agent.js";
 
 const PRICE_USDC    = 0.50;
@@ -18,8 +18,8 @@ const RESOURCE_DESC = "Generate llms.txt to improve AI search visibility — str
 
 const BAZAAR = buildBazaarExtension({
   serviceName:      "AEONOS — llms.txt Generator",
-  queryDescription: "Business URL or description to generate llms.txt for. E.g. 'Write llms.txt for my SaaS product'.",
-  queryExample:     "Write a complete llms.txt file for mysite.com — it's a B2B SaaS for beauty salon booking",
+  queryDescription: "Your real business URL (replace YOUR-SITE.com) or description to generate llms.txt for. E.g. 'Write llms.txt for https://yourdomain.com'.",
+  queryExample:     "Write a complete llms.txt file for https://YOUR-SITE.com, a B2B SaaS for beauty salon booking",
   outputExample:    "# mysite.com\n\n> AI booking software for beauty salons\n\n## Product\n...\n\n## FAQ\n...",
 });
 
@@ -64,7 +64,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.json({
       status:    "completed",
-      artifact:  { parts: [{ type: "text", text: result.response }], index: 0 },
+      artifact:  { parts: [{ type: "text", text: withPlaceholderNotice(result.response, query, caller_id, RESOURCE_URL()) }], index: 0 },
       tool_calls: result.tool_calls_made,
       tokens:    result.tokens_used,
     });
