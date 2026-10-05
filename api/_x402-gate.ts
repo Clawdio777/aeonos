@@ -69,22 +69,24 @@ export function buildBazaarExtension(opts: {
   queryDescription: string;
   queryExample: string;
   outputExample: string;
+  /** Replaces the default `query` field for routes whose body is not a single query string. */
+  body?: { input: Record<string, unknown>; properties: Record<string, unknown>; required: string[] };
 }) {
   const base = declareDiscoveryExtension({
     bodyType: "json",
     input: {
-      query: opts.queryExample,
+      ...(opts.body?.input ?? { query: opts.queryExample }),
       caller_id: DISCOVERY_CALLER_ID_EXAMPLE,
     },
     inputSchema: {
       properties: {
-        query: { type: "string", description: opts.queryDescription },
+        ...(opts.body?.properties ?? { query: { type: "string", description: opts.queryDescription } }),
         caller_id: {
           type: "string",
           description: "Stable ID for your agent or the site you are working on (e.g. your domain). Reuse it on every call so AEONOS remembers your site and history. Replace the example value.",
         },
       },
-      required: ["query"],
+      required: opts.body?.required ?? ["query"],
     },
     output: {
       example: { status: "completed", artifact: { parts: [{ type: "text", text: opts.outputExample }], index: 0 } },

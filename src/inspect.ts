@@ -978,9 +978,9 @@ export async function runInspectSiteStructure(input: {
 
   const auditTimestamp = new Date().toISOString();
 
-  // Fetch previous audit for delta
+  // Fetch previous audit for delta (empty caller_id = shared id, no memory)
   let deltaVsPreviousAudit: Record<string, any> | undefined;
-  try {
+  if (caller_id) try {
     const { data: existing } = await db
       .from("caller_memory")
       .select("audit_history, schema_state, entity_score, eat_score")
@@ -1048,7 +1048,7 @@ export async function runInspectSiteStructure(input: {
   };
 
   // Persist to Supabase — append to audit_history, update score columns
-  try {
+  if (caller_id) try {
     const { data: existing } = await db
       .from("caller_memory")
       .select("audit_history")

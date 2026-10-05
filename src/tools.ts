@@ -25,6 +25,11 @@ const db = createClient(
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
+// caller_ids shared by many buyers: the listing examples and the defaults used when no id is sent.
+// Never read or write caller_memory for these, or one buyer would see another buyer's site history.
+const SHARED_CALLER_IDS = new Set(["anon", "mcp-user", "my-agent-id", "your-agent-or-domain-id"]);
+export const isSharedCallerId = (id?: string) => !id || SHARED_CALLER_IDS.has(id.trim().toLowerCase());
+
 // ── Tool definitions ───────────────────────────────────────────────────────────
 
 export const tools: Anthropic.Tool[] = [
@@ -219,19 +224,22 @@ export async function executeTool(
   name: string,
   input: Record<string, any>
 ): Promise<string> {
+  const sharedId = isSharedCallerId(input.caller_id);
   switch (name) {
     case "queryLiveResearch":
       return await runLiveResearch(input);
     case "retrieveSharedAEO":
       return await runRetrieveSharedAEO(input);
     case "retrieveCallerMemory":
+      if (sharedId) return JSON.stringify({ caller_id: input.caller_id, status: "shared_caller_id_no_memory", context: {} });
       return await runRetrieveCallerMemory(input);
     case "storeCallerMemory":
+      if (sharedId) return `Memory not saved: caller_id ${input.caller_id} is shared by many callers`;
       return await runStoreCallerMemory(input);
     case "checkLiveCitations":
-      return await runCheckLiveCitations(input);
+      return await runCheckLiveCitations(sharedId ? { ...input, caller_id: undefined } : input);
     case "inspectSiteStructure":
-      return await runInspectSiteStructure(input as { url: string; caller_id: string; target_query?: string });
+      return await runInspectSiteStructure({ ...input, caller_id: sharedId ? "" : input.caller_id } as { url: string; caller_id: string; target_query?: string });
     default:
       return `Unknown tool: ${name}`;
   }

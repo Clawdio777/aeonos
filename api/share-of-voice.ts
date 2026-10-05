@@ -20,6 +20,14 @@ const BAZAAR = buildBazaarExtension({
   serviceName:      "AEONOS — Share of Voice",
   queryDescription: "Brands to compare (2-5 domains) and queries to run. E.g. brands: ['pemba.ai','competitor.com'], queries: ['best AI salon software']",
   queryExample:     "Compare share of voice: pemba.ai vs booksy.com vs fresha.com for 'best salon booking app'",
+  body: {
+    input: { brands: ["YOUR-SITE.com", "competitor.com"], queries: ["best salon booking app"] },
+    properties: {
+      brands:  { type: "array", items: { type: "string" }, minItems: 2, maxItems: 5, description: "2-5 domains to compare, yours first. Replace the example values." },
+      queries: { type: "array", items: { type: "string" }, minItems: 1, description: "Buyer questions to ask each AI engine, e.g. 'best salon booking app'." },
+    },
+    required: ["brands", "queries"],
+  },
   outputExample:    "## Share of Voice — AI Search\n\n| Brand | ChatGPT | Gemini | Google AIO | Google AI Mode | Perplexity | Claude |\n|---|---|---|---|---|---|---|\n| pemba.ai | 40% | 20% | 0% | 20% | 60% | 40% |\n| booksy.com | 40% | 60% | 100% | 80% | 20% | 20% |",
 });
 
