@@ -54,7 +54,9 @@ export function openaiSearchCost(usage: { input_tokens?: number; output_tokens?:
   return (inp * 0.4 + out * 1.6) / 1e6 + 0.025;
 }
 
-/** Gemini Flash with Google Search grounding: US$0.30/M input, US$2.50/M output, plus US$35 per 1,000 grounded prompts. */
+/** Gemini 3.8 Flash with Google Search grounding (ai.google.dev/gemini-api/docs/pricing, 06/10/2026): US$0.75/M input,
+ *  US$3.75/M output through 31/12/2026 (doubles from 01/01/2027), plus US$14 per 1,000 searches after 5,000 free a month.
+ *  Charged as if the free allowance is used up, so recorded cost errs high. */
 export function geminiGroundedCost(usage: { promptTokenCount?: number; candidatesTokenCount?: number } | undefined): number {
-  return ((usage?.promptTokenCount ?? 0) * 0.3 + (usage?.candidatesTokenCount ?? 0) * 2.5) / 1e6 + 0.035;
+  return ((usage?.promptTokenCount ?? 0) * 0.75 + (usage?.candidatesTokenCount ?? 0) * 3.75) / 1e6 + 0.014;
 }

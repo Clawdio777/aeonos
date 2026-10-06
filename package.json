@@ -41,6 +41,7 @@
     "dev": "vercel dev",
     "seed": "bun run seed/seed.ts",
     "deploy": "vercel --prod",
+    "test": "bun test",
     "test:norg": "bun run src/tools.ts"
   },
   "engines": {
