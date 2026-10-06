@@ -8,8 +8,8 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { requirePayment, buildPaymentReqs, buildBazaarExtension, send402 } from "./_x402-gate.js";
-import { checkCitationsRaw, type CitationSnapshot } from "../src/tools.js";
+import { withPlaceholderNotice, requirePayment, buildPaymentReqs, buildBazaarExtension, send402 } from "./_x402-gate.js";
+import { checkCitationsRaw, isSharedCallerId, type CitationSnapshot } from "../src/tools.js";
 
 const PRICE_USDC    = 1.50;
 const BASE_URL      = () => process.env.AGENT_BASE_URL || "https://aeonos.basechainlabs.com";
@@ -20,6 +20,14 @@ const BAZAAR = buildBazaarExtension({
   serviceName:      "AEONOS — Share of Voice",
   queryDescription: "Brands to compare (2-5 domains) and queries to run. E.g. brands: ['pemba.ai','competitor.com'], queries: ['best AI salon software']",
   queryExample:     "Compare share of voice: pemba.ai vs booksy.com vs fresha.com for 'best salon booking app'",
+  body: {
+    input: { brands: ["YOUR-SITE.com", "competitor.com"], queries: ["best salon booking app"] },
+    properties: {
+      brands:  { type: "array", items: { type: "string" }, minItems: 2, maxItems: 5, description: "2-5 domains to compare, yours first. Replace the example values." },
+      queries: { type: "array", items: { type: "string" }, minItems: 1, description: "Buyer questions to ask each AI engine, e.g. 'best salon booking app'." },
+    },
+    required: ["brands", "queries"],
+  },
   outputExample:    "## Share of Voice — AI Search\n\n| Brand | ChatGPT | Gemini | Google AIO | Google AI Mode | Perplexity | Claude |\n|---|---|---|---|---|---|---|\n| pemba.ai | 40% | 20% | 0% | 20% | 60% | 40% |\n| booksy.com | 40% | 60% | 100% | 80% | 20% | 20% |",
 });
 
@@ -156,15 +164,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         query: `share-of-voice: ${brands.join(" vs ")}`,
         payment_usdc: PRICE_USDC,
       }),
-      db.from("caller_memory").upsert(
+      // No memory row for shared caller_ids (see isSharedCallerId)
+      isSharedCallerId(caller_id) ? null : db.from("caller_memory").upsert(
         { caller_id, query_count: 1, updated_at: new Date().toISOString() },
         { onConflict: "caller_id" }
       ),
     ]);
 
+    const text = withPlaceholderNotice(report, brands.join(" "), caller_id, RESOURCE_URL(), {
+      resendBody: '{"brands": ["yourdomain.com", "your-competitor.com"], "queries": ["a question your buyers ask AI"], "caller_id": "yourdomain.com"}',
+      sample:     "With your real brands you get each brand's share of AI citations per engine and per query, e.g. yourdomain.com 40% vs your-competitor.com 60% on ChatGPT.",
+    });
+
     return res.json({
       status:    "completed",
-      artifact:  { parts: [{ type: "text", text: report }], index: 0 },
+      artifact:  { parts: [{ type: "text", text }], index: 0 },
       brands,
       queries,
       snapshots,

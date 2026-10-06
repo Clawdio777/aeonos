@@ -36,25 +36,61 @@ export function buildPaymentReqs(priceUsdc: number): PaymentRequirements {
   };
 }
 
+// ── Placeholder detection ─────────────────────────────────────────────────────
+// Buyers who run the discovery example as-is pay for an answer about a fake site.
+// Flag those calls and tell them how to resend with real values.
+// Count them in query_log with: caller_id in PLACEHOLDER_CALLER_IDS or query ~* PLACEHOLDER_DOMAIN.
+export const DISCOVERY_CALLER_ID_EXAMPLE = "YOUR-AGENT-OR-DOMAIN-ID";
+const PLACEHOLDER_CALLER_IDS = new Set(["my-agent-id", DISCOVERY_CALLER_ID_EXAMPLE.toLowerCase()]);
+const PLACEHOLDER_DOMAIN     = /\b(?:mysite|yoursite|your-site|example)\.(?:com|org|net)\b/i;
+
+export function isPlaceholderCall(query: string, caller_id: string): boolean {
+  return PLACEHOLDER_CALLER_IDS.has(caller_id.toLowerCase()) || PLACEHOLDER_DOMAIN.test(query);
+}
+
+export function withPlaceholderNotice(
+  text: string, query: string, caller_id: string, endpoint: string,
+  /** Override the resend body and real-result sample for routes whose body is not a single query string. */
+  opts: { resendBody?: string; sample?: string } = {},
+): string {
+  if (!isPlaceholderCall(query, caller_id)) return text;
+  const why = PLACEHOLDER_DOMAIN.test(query)
+    ? "a placeholder site such as mysite.com), so the result below is not about your site."
+    : `caller_id \`${caller_id}\`), which is shared by everyone who copies the example, so AEONOS cannot keep your site's history separate.`;
+  return [
+    `> **Heads up: this request used the example values from our listing** (${why}`,
+    `> To get a real result, resend to \`POST ${endpoint}\` with your own URL and a stable caller_id, e.g. \`${opts.resendBody ?? '{"query": "Audit https://yourdomain.com for AI search visibility", "caller_id": "yourdomain.com"}'}\`.`,
+    "> Reuse the same caller_id on every call: AEONOS remembers your site, keywords and past audits for that id.",
+    `> ${opts.sample ?? "With a real URL you get results for your actual pages, e.g. a 0-100 AI visibility score with a P1/P2/P3 fix list."}`,
+    "",
+    text,
+  ].join("\n");
+}
+
 // ── Build a Bazaar extension for a route ─────────────────────────────────────
 export function buildBazaarExtension(opts: {
   serviceName: string;
   queryDescription: string;
   queryExample: string;
   outputExample: string;
+  /** Replaces the default `query` field for routes whose body is not a single query string. */
+  body?: { input: Record<string, unknown>; properties: Record<string, unknown>; required: string[] };
 }) {
   const base = declareDiscoveryExtension({
     bodyType: "json",
     input: {
-      query: opts.queryExample,
-      caller_id: "my-agent-id",
+      ...(opts.body?.input ?? { query: opts.queryExample }),
+      caller_id: DISCOVERY_CALLER_ID_EXAMPLE,
     },
     inputSchema: {
       properties: {
-        query: { type: "string", description: opts.queryDescription },
-        caller_id: { type: "string", description: "Optional agent or user ID for persistent memory." },
+        ...(opts.body?.properties ?? { query: { type: "string", description: opts.queryDescription } }),
+        caller_id: {
+          type: "string",
+          description: "Stable ID for your agent or the site you are working on (e.g. your domain). Reuse it on every call so AEONOS remembers your site and history. Replace the example value.",
+        },
       },
-      required: ["query"],
+      required: opts.body?.required ?? ["query"],
     },
     output: {
       example: { status: "completed", artifact: { parts: [{ type: "text", text: opts.outputExample }], index: 0 } },

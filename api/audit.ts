@@ -8,7 +8,7 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { requirePayment, buildBazaarExtension } from "./_x402-gate.js";
+import { withPlaceholderNotice, requirePayment, buildBazaarExtension } from "./_x402-gate.js";
 import { runAgent } from "../src/agent.js";
 
 const PRICE_USDC = 2.50;
@@ -18,8 +18,8 @@ const RESOURCE_DESC = "Full AI search visibility audit — AEO/GEO/SEO 4-layer s
 
 const BAZAAR = buildBazaarExtension({
   serviceName:      "AEONOS — Full Audit",
-  queryDescription: "URL or business to audit. E.g. 'Audit mysite.com for AI search visibility'.",
-  queryExample:     "Audit mysite.com for AEO readiness and give me a full P1/P2/P3 action plan",
+  queryDescription: "Your real site URL or business to audit (replace YOUR-SITE.com). E.g. 'Audit https://yourdomain.com for AI search visibility'.",
+  queryExample:     "Audit https://YOUR-SITE.com for AEO readiness and give me a full P1/P2/P3 action plan",
   outputExample:    "# AEO Audit: mysite.com\n\n**Overall Score: 62/100**\n\n## P1 — Do This Week\n1. Add FAQPage JSON-LD schema...",
 });
 
@@ -71,7 +71,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.json({
       status:    "completed",
-      artifact:  { parts: [{ type: "text", text: result.response }], index: 0 },
+      artifact:  { parts: [{ type: "text", text: withPlaceholderNotice(result.response, query, caller_id, RESOURCE_URL()) }], index: 0 },
       tool_calls: result.tool_calls_made,
       tokens:    result.tokens_used,
     });

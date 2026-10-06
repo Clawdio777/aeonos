@@ -8,7 +8,7 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { requirePayment, buildPaymentReqs, buildBazaarExtension, send402 } from "./_x402-gate.js";
+import { withPlaceholderNotice, requirePayment, buildPaymentReqs, buildBazaarExtension, send402 } from "./_x402-gate.js";
 import { runAgent } from "../src/agent.js";
 
 const PRICE_USDC    = 1.50;
@@ -18,8 +18,8 @@ const RESOURCE_DESC = "AI search visibility progress report — Four Layers scor
 
 const BAZAAR = buildBazaarExtension({
   serviceName:      "AEONOS — Progress Report",
-  queryDescription: "URL or business to report on. E.g. 'Generate a progress report for mysite.com'.",
-  queryExample:     "Generate an AEO Four Layers progress report for mysite.com",
+  queryDescription: "Your real site URL (replace YOUR-SITE.com) or business to report on. E.g. 'Generate a progress report for https://yourdomain.com'.",
+  queryExample:     "Generate an AEO Four Layers progress report for https://YOUR-SITE.com",
   outputExample:    "# AEO Progress Report: mysite.com\n\n## Four Layers Scores\n- SXO: 72/100\n- AIO: 58/100\n- GEO: 44/100\n- AEO: 61/100\n\n## What's Working\n...\n\n## Next 3 Actions\n...",
 });
 
@@ -64,7 +64,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.json({
       status:    "completed",
-      artifact:  { parts: [{ type: "text", text: result.response }], index: 0 },
+      artifact:  { parts: [{ type: "text", text: withPlaceholderNotice(result.response, query, caller_id, RESOURCE_URL()) }], index: 0 },
       tool_calls: result.tool_calls_made,
       tokens:    result.tokens_used,
     });

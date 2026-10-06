@@ -8,7 +8,7 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { requirePayment, buildPaymentReqs, buildBazaarExtension, send402 } from "./_x402-gate.js";
+import { withPlaceholderNotice, requirePayment, buildPaymentReqs, buildBazaarExtension, send402 } from "./_x402-gate.js";
 import { runAgent } from "../src/agent.js";
 
 const PRICE_USDC    = 0.50;
@@ -18,8 +18,8 @@ const RESOURCE_DESC = "JSON-LD Schema.org markup generation for AI search visibi
 
 const BAZAAR = buildBazaarExtension({
   serviceName:      "AEONOS — Schema Generator",
-  queryDescription: "Page URL or description to generate schema for. E.g. 'Generate JSON-LD for my SaaS pricing page'.",
-  queryExample:     "Generate complete JSON-LD schema markup for mysite.com/pricing",
+  queryDescription: "Your real page URL (replace YOUR-SITE.com) or a description of the page. E.g. 'Generate JSON-LD for https://yourdomain.com/pricing'.",
+  queryExample:     "Generate complete JSON-LD schema markup for https://YOUR-SITE.com/pricing",
   outputExample:    "```json\n{\n  \"@context\": \"https://schema.org\",\n  \"@type\": \"FAQPage\",\n  \"mainEntity\": [...]\n}\n```",
 });
 
@@ -64,7 +64,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.json({
       status:    "completed",
-      artifact:  { parts: [{ type: "text", text: result.response }], index: 0 },
+      artifact:  { parts: [{ type: "text", text: withPlaceholderNotice(result.response, query, caller_id, RESOURCE_URL()) }], index: 0 },
       tool_calls: result.tool_calls_made,
       tokens:    result.tokens_used,
     });
