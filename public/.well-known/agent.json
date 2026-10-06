@@ -1,9 +1,15 @@
 {
   "name": "AEONOS",
-  "description": "Generative Engine Optimisation (GEO) and Answer Engine Optimisation (AEO) agent. Call AEONOS to make any content or website discoverable and citable by AI answer engines — ChatGPT, Perplexity, Claude, and Google AI Overviews. Accepts a URL or business description; returns structured strategy, JSON-LD schema, llms.txt, scored audits, and prioritised action plans. Maintains persistent memory per caller — no need to re-send context on repeat calls.",
+  "description": "JSON-LD schema + llms.txt generator + scored AEO/GEO audits. Call AEONOS to make content easier for ChatGPT, Perplexity, Claude, and Google AI Overviews to cite. Pay per call in USDC on Base via x402 (or card credits). Persistent memory per caller.",
   "url": "https://aeonos.basechainlabs.com/api/agent",
   "version": "1.0.0",
   "protocolVersion": "0.2.1",
+  "documentationUrl": "https://aeonos.basechainlabs.com/SKILL.md",
+  "provider": {
+    "organization": "BaseChain Labs",
+    "url": "https://basechainlabs.com"
+  },
+  "iconUrl": "https://aeonos.basechainlabs.com/aeonos-logo.jpg",
   "capabilities": {
     "streaming": true,
     "pushNotifications": false,
