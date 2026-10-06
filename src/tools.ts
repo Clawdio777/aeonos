@@ -411,6 +411,28 @@ export type CitationOptions = {
 // Perplexity/ChatGPT answers are non-deterministic, so one sample per query is noise.
 // LLM engines get CITATION_SAMPLES per query; Google AIO + Bing are SERP snapshots and run once.
 const CITATION_SAMPLES = Math.max(1, Number(process.env.CITATION_SAMPLES) || 5);
+/**
+ * Exact model IDs the citation sampler calls (method v3, 06/10/2026). Pinned so a provider moving an alias
+ * cannot change the measurement mid-trial. Change models here only, and bump CITATION_METHOD_VERSION when you do.
+ * chatgpt: OpenAI snapshot of gpt-4.1-mini (developers.openai.com/api/docs/models/gpt-4.1-mini).
+ * gemini: the model behind gemini-flash-latest per the Gemini API release notes of 19/05/2026 (ai.google.dev/gemini-api/docs/changelog).
+ * perplexity: Sonar has no dated IDs; "sonar" is the exact ID (docs.perplexity.ai).
+ * claude: dated Claude Haiku 4.5 snapshot.
+ * Google AI Overviews and AI Mode are SERP fetches (DataForSEO), not a model call.
+ */
+export const CITATION_MODELS = {
+  chatgpt: "gpt-4.1-mini-2025-04-14",
+  gemini: "gemini-3.5-flash",
+  perplexity: "sonar",
+  claude: "claude-haiku-4-5-20251001",
+  google_ai: "serp",
+  google_ai_mode: "serp",
+} as const;
+export const CITATION_METHOD_VERSION = "v3";
+
+export type CitationMethod = { version: string; samples: number; models: typeof CITATION_MODELS };
+export const citationMethod = (samples: number): CitationMethod => ({ version: CITATION_METHOD_VERSION, samples, models: { ...CITATION_MODELS } });
+
 const QUERY_CONCURRENCY = 2; // keeps in-flight LLM calls ≈ 2 × 2 × samples, under Perplexity/OpenAI burst limits
 
 type SentimentResult = {
@@ -708,7 +730,7 @@ async function queryPplxRaw(question: string, key: string): Promise<{ answer: st
   const res = await fetch("https://api.perplexity.ai/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "sonar", messages: [{ role: "user", content: question }], max_tokens: 500 }),
+    body: JSON.stringify({ model: CITATION_MODELS.perplexity, messages: [{ role: "user", content: question }], max_tokens: 500 }),
     signal: AbortSignal.timeout(20000),
   });
   if (!res.ok) throw httpError(res.status);
@@ -721,7 +743,7 @@ async function queryPplxRaw(question: string, key: string): Promise<{ answer: st
 
 /** ChatGPT via the Responses API with the web search tool (gpt-4o-mini-search-preview was deprecated by 19/09/2026). */
 async function queryGPTRaw(question: string, key: string): Promise<{ answer: string; citations: string[] }> {
-  const model = process.env.OPENAI_SEARCH_MODEL || "gpt-4.1-mini";
+  const model = CITATION_MODELS.chatgpt;
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -817,7 +839,7 @@ async function queryGoogleAIMode(query: string, locationCode = 2840): Promise<Go
 
 /** Gemini with Google Search grounding. Grounding chunks carry a redirect URI and the source domain as title. */
 async function queryGeminiRaw(question: string, key: string): Promise<{ answer: string; citations: string[] }> {
-  const model = process.env.GEMINI_MODEL || "gemini-flash-latest";
+  const model = CITATION_MODELS.gemini;
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: "POST",
     headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
@@ -842,12 +864,12 @@ async function queryGeminiRaw(question: string, key: string): Promise<{ answer: 
 /** Claude with the web search tool. Sources come from the search result blocks and the text citations. */
 async function queryClaudeRaw(question: string): Promise<{ answer: string; citations: string[] }> {
   const res = await anthropic.messages.create({
-    model: "claude-haiku-4-5-20251001",
+    model: CITATION_MODELS.claude,
     max_tokens: 700,
     tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 } as any],
     messages: [{ role: "user", content: question }],
   });
-  addCost("anthropic", anthropicCost("claude-haiku-4-5-20251001", res.usage as any));
+  addCost("anthropic", anthropicCost(CITATION_MODELS.claude, res.usage as any));
   const blocks: any[] = res.content as any[];
   const answer = blocks.filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
   const citations: string[] = [];
@@ -998,6 +1020,7 @@ export type CitationSnapshot = {
   /** true when every attempted engine got >= 80% of its expected samples (v3). */
   valid: boolean;
   invalidReasons: string[];
+  method: CitationMethod;
 };
 
 /** Single-sample check — share-of-voice runs 2–5 brands in parallel, so sampling is kept at 1 to bound cost. */
@@ -1043,5 +1066,6 @@ export async function checkCitationsRaw(domain: string, queries: string[], sampl
     sentiment,
     valid,
     invalidReasons,
+    method: citationMethod(samples),
   };
 }
