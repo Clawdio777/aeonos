@@ -22,6 +22,7 @@ import { x402Version as X402_VERSION } from "@x402/core";
 import { createFacilitatorConfig } from "@coinbase/x402";
 import { declareDiscoveryExtension } from "@x402/extensions";
 import { runAgent } from "../src/agent.js";
+import agentCard from "../public/.well-known/agent.json" with { type: "json" };
 
 // ── Coinbase CDP facilitator for Base mainnet ──────────────────────────────────
 // .trim() is critical — Vercel env vars can have trailing newlines
@@ -505,78 +506,9 @@ function send402(
 }
 
 // ── A2A Agent Card ─────────────────────────────────────────────────────────────
+// Single source: public/.well-known/agent.json (also served at
+// /.well-known/agent.json and /.well-known/agent-card.json via vercel.json).
 
 function buildAgentCard() {
-  const base = process.env.AGENT_BASE_URL || "https://aeonosai.vercel.app";
-  return {
-    name: "AEONOS",
-    description:
-      "Specialist AEO/GEO knowledge agent (AEON.OS). Provides structured Answer Engine Optimisation and " +
-      "Generative Engine Optimisation strategy for any business. Backed by proprietary live data, " +
-      "real campaign knowledge, and persistent per-caller memory — AEONOS remembers your site, " +
-      "keywords, and strategy across every session.",
-    url: `${base}/api/agent`,
-    version: "1.0.0",
-    protocolVersion: "0.2.1",
-    capabilities: {
-      streaming: true,
-      pushNotifications: false,
-      stateTransitionHistory: true,
-    },
-    skills: [
-      {
-        id: "aeo_optimisation",
-        name: "AEO Optimisation",
-        description:
-          "Full AEO audit and strategy: on-page, schema, llms.txt, E-E-A-T, " +
-          "AEONOS 5-pillar AI inclusion check, keyword targeting, P1/P2/P3 roadmap.",
-        inputModes: ["text"],
-        outputModes: ["text", "json"],
-        examples: [
-          "Audit mysite.com for AEO readiness",
-          "What schema markup should I add to my pricing page?",
-          "Run the AEONOS AI inclusion check on example.com",
-        ],
-      },
-      {
-        id: "geo_strategy",
-        name: "GEO Strategy",
-        description:
-          "Getting cited by ChatGPT, Perplexity, Claude, and Google AI Overviews. " +
-          "llms.txt, FAQ schema, entity markup, question-based headings (#1 AEO signal).",
-        inputModes: ["text"],
-        outputModes: ["text"],
-        examples: [
-          "How do I get cited by Perplexity for my target keywords?",
-          "Write an llms.txt for my SaaS product",
-        ],
-      },
-      {
-        id: "persistent_memory",
-        name: "Persistent Caller Memory",
-        description:
-          "Remembers your site, keywords, audit history, and strategy across sessions.",
-        inputModes: ["text"],
-        outputModes: ["text"],
-      },
-      {
-        id: "progress_report",
-        name: "AEO Progress Report",
-        description:
-          "Structured progress report with Four Layers scores, what's working, and next 3 actions.",
-        inputModes: ["text"],
-        outputModes: ["text", "json"],
-      },
-    ],
-    pricing: {
-      default: `${PRICE_PER_QUERY_USDC} USDC per query`,
-      bulk: "0.10 USDC per query (10+ queries/session)",
-    },
-    protocols: ["x402", "a2a"],
-    network: "base",
-    payment_address: process.env.PAYMENT_ADDRESS || "",
-    supportedTrust: ["reputation", "crypto-economic"],
-    agentURI: "ipfs://bafkreibeuaqom35wkxpj6th4zpunx64gti4sfitfj4btetfn3fadncdds4",
-    agentId: 47096,
-  };
+  return agentCard;
 }
