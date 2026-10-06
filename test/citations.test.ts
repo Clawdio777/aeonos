@@ -230,11 +230,11 @@ describe("4. Pinned models and the method block", () => {
   test("every sampler calls the pinned model ID and the method block names them", async () => {
     const r = await tools.checkCitationsRaw("pemba.ai", Q2, 2);
     expect(tools.CITATION_MODELS).toEqual({
-      chatgpt: "gpt-4.1-mini-2025-04-14", gemini: "gemini-3.5-flash", perplexity: "sonar",
+      chatgpt: "gpt-4.1-mini-2025-04-14", gemini: "gemini-3.8-flash", perplexity: "sonar",
       claude: "claude-haiku-4-5-20251001", google_ai: "serp", google_ai_mode: "serp",
     });
     expect(new Set(state.models.gpt)).toEqual(new Set(["gpt-4.1-mini-2025-04-14"]));
-    expect(new Set(state.models.gemini)).toEqual(new Set(["gemini-3.5-flash"]));
+    expect(new Set(state.models.gemini)).toEqual(new Set(["gemini-3.8-flash"]));
     expect(new Set(state.models.pplx)).toEqual(new Set(["sonar"]));
     expect(new Set(state.models.claude)).toEqual(new Set(["claude-haiku-4-5-20251001"]));
     expect(r.method).toEqual({ version: "v3", samples: 2, models: tools.CITATION_MODELS });
@@ -245,7 +245,7 @@ describe("4. Pinned models and the method block", () => {
     process.env.GEMINI_MODEL = "gemini-flash-latest";
     await tools.checkCitationsRaw("pemba.ai", ["q1"], 1);
     expect(state.models.gpt).toEqual(["gpt-4.1-mini-2025-04-14"]);
-    expect(state.models.gemini).toEqual(["gemini-3.5-flash"]);
+    expect(state.models.gemini).toEqual(["gemini-3.8-flash"]);
     delete process.env.OPENAI_SEARCH_MODEL;
     delete process.env.GEMINI_MODEL;
   });

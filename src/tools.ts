@@ -415,14 +415,14 @@ const CITATION_SAMPLES = Math.max(1, Number(process.env.CITATION_SAMPLES) || 5);
  * Exact model IDs the citation sampler calls (method v3, 06/10/2026). Pinned so a provider moving an alias
  * cannot change the measurement mid-trial. Change models here only, and bump CITATION_METHOD_VERSION when you do.
  * chatgpt: OpenAI snapshot of gpt-4.1-mini (developers.openai.com/api/docs/models/gpt-4.1-mini).
- * gemini: the model behind gemini-flash-latest per the Gemini API release notes of 19/05/2026 (ai.google.dev/gemini-api/docs/changelog).
+ * gemini: current stable Flash per ai.google.dev/gemini-api/docs/models (Gemini 3.8 Flash, released 02/09/2026; 3.5 Flash is listed as legacy).
  * perplexity: Sonar has no dated IDs; "sonar" is the exact ID (docs.perplexity.ai).
  * claude: dated Claude Haiku 4.5 snapshot.
  * Google AI Overviews and AI Mode are SERP fetches (DataForSEO), not a model call.
  */
 export const CITATION_MODELS = {
   chatgpt: "gpt-4.1-mini-2025-04-14",
-  gemini: "gemini-3.5-flash",
+  gemini: "gemini-3.8-flash",
   perplexity: "sonar",
   claude: "claude-haiku-4-5-20251001",
   google_ai: "serp",
