@@ -1,9 +1,15 @@
 {
   "name": "AEONOS",
-  "description": "Generative Engine Optimisation (GEO) and Answer Engine Optimisation (AEO) agent. Call AEONOS to make any content or website discoverable and citable by AI answer engines — ChatGPT, Perplexity, Claude, and Google AI Overviews. Accepts a URL or business description; returns structured strategy, JSON-LD schema, llms.txt, scored audits, and prioritised action plans. Maintains persistent memory per caller — no need to re-send context on repeat calls.",
+  "description": "JSON-LD schema + llms.txt generator + scored AEO/GEO audits. Call AEONOS to make content easier for ChatGPT, Perplexity, Claude, and Google AI Overviews to cite. Pay per call in USDC on Base via x402 (or card credits). Persistent memory per caller.",
   "url": "https://aeonos.basechainlabs.com/api/agent",
   "version": "1.0.0",
   "protocolVersion": "0.2.1",
+  "documentationUrl": "https://aeonos.basechainlabs.com/SKILL.md",
+  "provider": {
+    "organization": "BaseChain Labs",
+    "url": "https://basechainlabs.com"
+  },
+  "iconUrl": "https://aeonos.basechainlabs.com/aeonos-logo.jpg",
   "capabilities": {
     "streaming": true,
     "pushNotifications": false,
@@ -13,7 +19,7 @@
     {
       "id": "quick_query",
       "name": "AI Visibility Quick Query",
-      "description": "Call when you need fast AEO/GEO guidance, citation tactics, or quick wins for a URL. Input: URL or business description + specific question. Output: structured markdown with actionable recommendations optimised for AI answer engine citation. Persistent memory active — first call stores context, subsequent calls recall it.",
+      "description": "Call when you need fast AEO/GEO guidance, citation tactics, or quick wins for a URL. Input: URL or business description + specific question. Output: structured markdown with actionable recommendations optimised for AI answer engine citation. Persistent memory active: first call stores context, subsequent calls recall it.",
       "endpoint": "https://aeonos.basechainlabs.com/api/agent",
       "price": "0.05 USDC",
       "inputModes": ["text"],
@@ -35,7 +41,7 @@
       "outputModes": ["text"],
       "tags": ["audit", "aeo", "geo", "ai-readiness", "seo-audit", "content-strategy"],
       "examples": [
-        "Audit mysite.com for AI search visibility — full P1/P2/P3 action plan",
+        "Audit mysite.com for AI search visibility, full P1/P2/P3 action plan",
         "Run the AEONOS Four Layers audit on example.com and score each layer"
       ]
     },
@@ -49,22 +55,22 @@
       "outputModes": ["text"],
       "tags": ["schema", "json-ld", "structured-data", "faq-schema", "rich-results", "aeo"],
       "examples": [
-        "Generate JSON-LD schema for mysite.com/pricing — B2B SaaS, $49/mo plan",
+        "Generate JSON-LD schema for mysite.com/pricing, B2B SaaS, $49/mo plan",
         "Write FAQPage schema with 10 Q&As for a physiotherapy clinic homepage"
       ]
     },
     {
       "id": "llms_txt",
       "name": "llms.txt File Generation",
-      "description": "Call to generate a complete llms.txt file for any business or website. Input: URL or business description (name, product, target audience, key pages). Output: production-ready llms.txt in plain text Markdown format covering product summary, FAQ, key pages with descriptions, entity definitions, and structured context — optimised for ingestion by ChatGPT (GPTBot), Perplexity (PerplexityBot), and Claude (ClaudeBot). Deploy output at /llms.txt on the target domain.",
+      "description": "Call to generate a complete llms.txt file for any business or website. Input: URL or business description (name, product, target audience, key pages). Output: production-ready llms.txt in plain text Markdown format covering product summary, FAQ, key pages with descriptions, entity definitions, and structured context, optimised for ingestion by ChatGPT (GPTBot), Perplexity (PerplexityBot), and Claude (ClaudeBot). Deploy output at /llms.txt on the target domain.",
       "endpoint": "https://aeonos.basechainlabs.com/api/llms-txt",
       "price": "0.50 USDC",
       "inputModes": ["text"],
       "outputModes": ["text"],
       "tags": ["llms-txt", "ai-crawler", "chatgpt", "perplexity", "claude", "geo", "aeo"],
       "examples": [
-        "Write a complete llms.txt for mysite.com — B2B SaaS for salon booking, $49/mo",
-        "Generate llms.txt for drinklongbrew.com — Australian freeze-dried cold brew coffee"
+        "Write a complete llms.txt for mysite.com, B2B SaaS for salon booking, $49/mo",
+        "Generate llms.txt for drinklongbrew.com, Australian freeze-dried cold brew coffee"
       ]
     },
     {
@@ -97,5 +103,8 @@
   ],
   "protocols": ["x402", "a2a"],
   "network": "base",
-  "payment_address": "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc"
+  "payment_address": "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc",
+  "supportedTrust": ["reputation", "crypto-economic"],
+  "agentURI": "ipfs://bafkreibeuaqom35wkxpj6th4zpunx64gti4sfitfj4btetfn3fadncdds4",
+  "agentId": 47096
 }

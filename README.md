@@ -124,14 +124,14 @@ Built by [BaseChain Labs](https://basechainlabs.com) · [SKILL.md](https://aeono
 
 ### How a change goes live
 
-There is no test suite and no CI on this repo. A push to `main` is the deploy.
+There is no CI on this repo. A push to `main` is the deploy.
 
-1. Edit, then type-check: `npx tsc --noEmit -p .`
+1. Edit, then type-check: `npx tsc --noEmit -p .` and run the tests: `bun test` (citation sampler, `test/`; every provider is mocked, no live calls)
 2. Commit and push to `main`. Vercel builds and deploys production from the GitHub integration.
 3. Confirm the newest production deployment carries your commit SHA and the endpoint answers: `curl -s https://aeonos.basechainlabs.com/.well-known/agent.json | head -c 300`
 4. A push also redeploys the Railway seller. Confirm its log shows it connected afterwards.
 
-Because there are no tests, prove a change on the live endpoint with a read-only call before calling it done. Never make a paid call (x402 or Stripe) just to test.
+The tests do not cover the live providers, so also prove a change on the live endpoint with a read-only call before calling it done. Never make a paid call (x402 or Stripe) just to test.
 
 ### Things that bite
 
@@ -139,4 +139,5 @@ Because there are no tests, prove a change on the live endpoint with a read-only
 - Agentic.market's "Validate endpoint" tool: use POST. GET returns the agent card (200) by design and the validator then says "no x402 setup".
 - The sampler needs credit on OpenAI and Gemini. When either runs dry that engine is reported as "not sampled", never as 0%.
 - Bing and Copilot are deliberately not sampled (no reliable source). Do not add them.
-- `POST /api/citations` has a downstream consumer (Pemba's measurement loop). Changing its response shape breaks that.
+- `POST /api/citations` has a downstream consumer (Pemba's measurement loop). Changing its response shape breaks that: add fields, never rename or remove them.
+- Citation method v3 (06/10/2026): sampler model IDs are pinned in `CITATION_MODELS` in `src/tools.ts` (env overrides removed). Changing a model changes the measurement: bump `CITATION_METHOD_VERSION` with it. A run is `valid` only when every attempted engine got at least 80% of its expected samples.
