@@ -46,6 +46,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
       unavailable: result.unavailable,
       competitors: result.competitors,
+      valid: result.valid,
+      invalidReasons: result.invalidReasons,
       costs,
       cost_usd: totalCost(costs),
     });
