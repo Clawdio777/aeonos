@@ -518,18 +518,28 @@ ${withText.map((a, i) => `${i + 1}. [${a.engine}] Query: "${a.query}"\nAnswer: $
   }
 }
 
-/** Whole-word, case-insensitive match for a business name; null when the name is too short to match safely. */
-function brandRegex(brandName?: string): RegExp | null {
+const escapeRx = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Whole-word, case-insensitive match for a business name; null when the name is too short to match safely. A single word ("Pemba") matches on its own. */
+export function brandRegex(brandName?: string): RegExp | null {
   const name = brandName?.trim();
   if (!name || name.length < 3) return null;
-  return new RegExp(`(^|[^\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\p{L}\\p{N}])`, "iu");
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRx(name)}($|[^\\p{L}\\p{N}])`, "iu");
 }
 
-function extractCitationResult(domain: string, answer: string, citations: string[], brand: RegExp | null = null): { cited: boolean; named: boolean; competitors: string[]; competitorUrls: string[]; sources: string[] } {
+/**
+ * linked = the domain is in the answer's sources or in a URL inside the answer text.
+ * named = not linked, but the answer names the business (brand_name) or writes the domain as plain text ("pemba.ai").
+ * Both count as cited.
+ */
+export function extractCitationResult(domain: string, answer: string, citations: string[], brand: RegExp | null = null): { cited: boolean; named: boolean; competitors: string[]; competitorUrls: string[]; sources: string[] } {
   const domainClean = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
   const rx = new RegExp(domainClean.replace(".", "\\."), "i");
-  const linked = rx.test(answer) || citations.some((c) => rx.test(c));
-  const named = !linked && !!brand && brand.test(answer);
+  const d = escapeRx(domainClean);
+  const urlRx = new RegExp(`https?://([a-z0-9-]+\\.)*${d}(?![\\p{L}\\p{N}-])`, "iu");
+  const textRx = new RegExp(`(?<![\\p{L}\\p{N}.-])(www\\.)?${d}(?![\\p{L}\\p{N}-]|\\.[\\p{L}\\p{N}])`, "iu");
+  const linked = urlRx.test(answer) || citations.some((c) => rx.test(c));
+  const named = !linked && ((!!brand && brand.test(answer)) || textRx.test(answer));
   const cited = linked || named;
   const competitorUrls = citations.filter((c) => !rx.test(c) && /^https?:\/\//.test(c)).filter((v, i, a) => a.indexOf(v) === i).slice(0, 6);
   const competitors = citations
