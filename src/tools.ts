@@ -576,7 +576,7 @@ async function collectCitations(domain: string, queries: string[], samples: numb
         pplxKey ? (attempted.pplx++, sampleLlm(domain, q, samples, () => queryPplxRaw(q, pplxKey), brand)) : Promise.resolve(null),
         openaiKey ? (attempted.gpt++, sampleLlm(domain, q, samples, () => queryGPTRaw(q, openaiKey), brand)) : Promise.resolve(null),
         geminiKey ? (attempted.gemini++, sampleLlm(domain, q, samples, () => queryGeminiRaw(q, geminiKey), brand)) : Promise.resolve(null),
-        claudeKey ? (attempted.claude++, sampleLlm(domain, q, Math.min(samples, 2), () => queryClaudeRaw(q), brand)) : Promise.resolve(null),
+        claudeKey ? (attempted.claude++, sampleLlm(domain, q, samples, () => queryClaudeRaw(q), brand)) : Promise.resolve(null),
         hasDFS ? (attempted.aio++, queryGoogleAIOverview(q, loc)) : Promise.resolve({ text: "", sources: [], shown: false }),
         hasDFS ? (attempted.aimode++, queryGoogleAIMode(q, loc)) : Promise.resolve({ text: "", sources: [], shown: false }),
       ]);
@@ -878,7 +878,7 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
   const lines: string[] = [
     `## Live Citation Check — ${domain}`,
     ...engines.map(summaryLine),
-    `Method: ${samples} samples per query on ChatGPT, Gemini and Perplexity (Claude up to 2), one fetch per query for Google AI Overviews and AI Mode (✅ = cited in a majority of samples); a change under ~${Math.round(100 / Math.sqrt(maxSamples))}pp between runs is within sampling noise. Engines marked NOT SAMPLED returned nothing and must be reported as unknown, never as 0%. Bing/Copilot is not measured (no reliable source).`,
+    `Method: ${samples} samples per query on ChatGPT, Gemini, Perplexity and Claude, one fetch per query for Google AI Overviews and AI Mode (✅ = cited in a majority of samples); a change under ~${Math.round(100 / Math.sqrt(maxSamples))}pp between runs is within sampling noise. Engines marked NOT SAMPLED returned nothing and must be reported as unknown, never as 0%. Bing/Copilot is not measured (no reliable source).`,
     "",
     ...engines.flatMap((e) => e.rows.map((r) =>
       `${r.cited ? "✅" : "❌"} [${e.label}] "${r.query}"${sampleNote(r)}\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Cited instead: ${(r.competitorUrls.length ? r.competitorUrls : r.competitors).join(", ") || "none identified"}`}`
