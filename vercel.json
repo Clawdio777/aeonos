@@ -10,7 +10,7 @@
     },
     {
       "source": "/.well-known/agent-card.json",
-      "destination": "/public/.well-known/agent.json"
+      "destination": "/.well-known/agent.json"
     },
     {
       "source": "/api/agent-card",
