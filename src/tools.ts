@@ -521,15 +521,30 @@ function extractCitationResult(domain: string, answer: string, citations: string
 type LlmRun = { answer: string; citations: string[] };
 type LlmRow = CitRow & { answer: string };
 
-/** Run n samples of one LLM engine for one query and fold them into a single row. Empty responses are failed calls and are dropped. */
-async function sampleLlm(domain: string, query: string, n: number, run: () => Promise<LlmRun>, brand: RegExp | null = null): Promise<LlmRow | null> {
-  const runs = (await Promise.allSettled(Array.from({ length: n }, run)))
-    .filter((r): r is PromiseFulfilledResult<LlmRun> => r.status === "fulfilled" && (r.value.answer.length > 0 || r.value.citations.length > 0))
-    .map((r) => r.value);
-  if (!runs.length) return null;
+/** Short reason for a failed engine call: "timeout", "rate limit", "http <status>", or the error message. */
+export function failReason(e: unknown): string {
+  const err = (e ?? {}) as { name?: string; status?: unknown; message?: string };
+  if (err.name === "TimeoutError" || err.name === "AbortError" || /timed? ?out/i.test(err.message ?? "")) return "timeout";
+  if (err.status === 429) return "rate limit";
+  if (typeof err.status === "number") return `http ${err.status}`;
+  return (err.message || String(e) || "error").slice(0, 80);
+}
+
+type Sampled = { row: LlmRow | null; errors: string[] };
+
+/** Run n samples of one LLM engine for one query and fold them into a single row. Failed or empty calls are not samples; their reasons are returned in errors. */
+async function sampleLlm(domain: string, query: string, n: number, run: () => Promise<LlmRun>, brand: RegExp | null = null): Promise<Sampled> {
+  const errors: string[] = [];
+  const runs: LlmRun[] = [];
+  for (const r of await Promise.allSettled(Array.from({ length: n }, run))) {
+    if (r.status === "rejected") errors.push(failReason(r.reason));
+    else if (r.value.answer.length > 0 || r.value.citations.length > 0) runs.push(r.value);
+    else errors.push("empty");
+  }
+  if (!runs.length) return { row: null, errors };
   const rows = runs.map((r) => extractCitationResult(domain, r.answer, r.citations, brand));
   const citedSamples = rows.filter((r) => r.cited).length;
-  return {
+  const row: LlmRow = {
     query,
     cited: citedSamples * 2 >= runs.length,
     citedSamples,
@@ -541,6 +556,7 @@ async function sampleLlm(domain: string, query: string, n: number, run: () => Pr
     answer: runs[0].answer,
     answers: runs.map((r) => r.answer),
   };
+  return { row, errors };
 }
 
 /** One row per fetched SERP. shown=false (no AI answer on the page) is a real sample that counts as not cited. */
@@ -550,11 +566,21 @@ function serpRow(domain: string, query: string, g: GoogleAnswer, brand: RegExp |
   return { ...r, query, citedSamples: r.cited ? 1 : 0, samples: 1, namedSamples: named ? 1 : 0, shown: true, answer: g.text, answers: [g.text] };
 }
 
-type Collected = {
-  pplx: LlmRow[]; gpt: LlmRow[]; gemini: LlmRow[]; claude: LlmRow[];
-  aio: LlmRow[]; aimode: LlmRow[];
+type EngineKey = "pplx" | "gpt" | "gemini" | "claude" | "aio" | "aimode";
+const ENGINE_KEYS: EngineKey[] = ["pplx", "gpt", "gemini", "claude", "aio", "aimode"];
+const isGoogle = (k: EngineKey) => k === "aio" || k === "aimode";
+
+/** One failed call: which question, and a short reason (rate limit, timeout, empty, http 500...). */
+export type EngineError = { query: string; reason: string };
+
+type Collected = Record<EngineKey, LlmRow[]> & {
   /** Engines that produced no data this run, with the reason. Reported as "not sampled", never as 0%. */
   unavailable: Record<string, string>;
+  /** Every failed call per engine. Failed calls are never rows and never count as "not cited". */
+  errors: Record<EngineKey, EngineError[]>;
+  attempted: Record<EngineKey, boolean>;
+  queryCount: number;
+  samples: number;
 };
 
 // Engine tiers (19/09/2026, per referral-share studies): Tier 1 ChatGPT, Google AI Overviews + AI Mode, Gemini.
@@ -568,8 +594,14 @@ async function collectCitations(domain: string, queries: string[], samples: numb
   const geminiKey = process.env.GEMINI_API_KEY;
   const claudeKey = process.env.ANTHROPIC_API_KEY;
   const hasDFS = !!(process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD);
-  const out: Collected = { pplx: [], gpt: [], gemini: [], claude: [], aio: [], aimode: [], unavailable: {} };
   const ordered = queries.slice(0, 6);
+  const out: Collected = {
+    pplx: [], gpt: [], gemini: [], claude: [], aio: [], aimode: [], unavailable: {},
+    errors: { pplx: [], gpt: [], gemini: [], claude: [], aio: [], aimode: [] },
+    attempted: { pplx: !!pplxKey, gpt: !!openaiKey, gemini: !!geminiKey, claude: !!claudeKey, aio: hasDFS, aimode: hasDFS },
+    queryCount: ordered.length,
+    samples,
+  };
   const queue = [...ordered];
   const attempted = { pplx: 0, gpt: 0, gemini: 0, claude: 0, aio: 0, aimode: 0 };
 
@@ -584,20 +616,25 @@ async function collectCitations(domain: string, queries: string[], samples: numb
         hasDFS ? (attempted.aio++, queryGoogleAIOverview(q, loc)) : Promise.resolve(null),
         hasDFS ? (attempted.aimode++, queryGoogleAIMode(q, loc)) : Promise.resolve(null),
       ]);
-      if (pplx.status === "fulfilled" && pplx.value) out.pplx.push(pplx.value);
-      if (gpt.status === "fulfilled" && gpt.value) out.gpt.push(gpt.value);
-      if (gemini.status === "fulfilled" && gemini.value) out.gemini.push(gemini.value);
-      if (claude.status === "fulfilled" && claude.value) out.claude.push(claude.value);
-      // Google surfaces: a fetched SERP with no AI answer is a genuine "not shown" and counts as not cited
-      // A failed fetch (error, timeout) is not a row.
-      if (aio.status === "fulfilled" && aio.value) out.aio.push(serpRow(domain, q, aio.value, brand));
-      if (aimode.status === "fulfilled" && aimode.value) out.aimode.push(serpRow(domain, q, aimode.value, brand));
+      const llm = (k: EngineKey, r: PromiseSettledResult<Sampled | null>) => {
+        if (r.status === "rejected") { out.errors[k].push({ query: q, reason: failReason(r.reason) }); return; }
+        if (!r.value) return;
+        if (r.value.row) out[k].push(r.value.row);
+        for (const reason of r.value.errors) out.errors[k].push({ query: q, reason });
+      };
+      llm("pplx", pplx); llm("gpt", gpt); llm("gemini", gemini); llm("claude", claude);
+      // Google surfaces: a fetched SERP with no AI answer is a shown:false row (not cited); a failed fetch is an error, not a row.
+      const serp = (k: EngineKey, r: PromiseSettledResult<GoogleAnswer | null>) => {
+        if (r.status === "rejected") out.errors[k].push({ query: q, reason: failReason(r.reason) });
+        else if (r.value) out[k].push(serpRow(domain, q, r.value, brand));
+      };
+      serp("aio", aio); serp("aimode", aimode);
     }
   };
   await Promise.all(Array.from({ length: Math.min(QUERY_CONCURRENCY, ordered.length) }, worker));
 
-  const byQuery = (a: CitRow, b: CitRow) => ordered.indexOf(a.query) - ordered.indexOf(b.query);
-  for (const k of ["pplx", "gpt", "gemini", "claude", "aio", "aimode"] as const) out[k].sort(byQuery);
+  const byQuery = (a: { query: string }, b: { query: string }) => ordered.indexOf(a.query) - ordered.indexOf(b.query);
+  for (const k of ENGINE_KEYS) { out[k].sort(byQuery); out.errors[k].sort(byQuery); }
 
   if (!pplxKey) out.unavailable.perplexity = "no PPLX_API_KEY";
   else if (attempted.pplx && !out.pplx.length) out.unavailable.perplexity = "API returned no data (check Perplexity key or quota)";
@@ -613,6 +650,47 @@ async function collectCitations(domain: string, queries: string[], samples: numb
 
 type EngineStats = { cited: number; total: number; citedSamples: number; samples: number; rate: number };
 
+/**
+ * How complete an engine's measurement was (v3). expectedSamples = queries x samples for LLMs, queries for
+ * Google surfaces; gotSamples = successful samples (Google shown:false rows included).
+ */
+export type EngineCoverage = {
+  attempted: boolean;
+  expectedSamples: number;
+  gotSamples: number;
+  errors: EngineError[];
+  /** Google surfaces only: how many fetched SERPs carried an AI answer. */
+  aiAnswerShown?: number;
+};
+
+function engineCoverage(c: Collected, k: EngineKey): EngineCoverage {
+  const cov: EngineCoverage = {
+    attempted: c.attempted[k],
+    expectedSamples: c.queryCount * (isGoogle(k) ? 1 : c.samples),
+    gotSamples: c[k].reduce((a, r) => a + r.samples, 0),
+    errors: c.errors[k],
+  };
+  if (isGoogle(k)) cov.aiAnswerShown = c[k].filter((r) => r.shown).length;
+  return cov;
+}
+
+/** A run is valid only when every attempted engine got at least 80% of its expected samples. */
+export const MIN_SAMPLE_SHARE = 0.8;
+
+export function checkValidity(engines: Record<string, Pick<EngineCoverage, "attempted" | "expectedSamples" | "gotSamples">>): { valid: boolean; invalidReasons: string[] } {
+  const invalidReasons: string[] = [];
+  const attempted = Object.entries(engines).filter(([, e]) => e.attempted);
+  if (!attempted.length) invalidReasons.push("no engine was attempted");
+  for (const [name, e] of attempted) {
+    // integer form of got/expected >= 0.8, so exactly 80% passes without float error
+    if (e.gotSamples * 5 < e.expectedSamples * 4) {
+      const pct = e.expectedSamples ? Math.round((e.gotSamples / e.expectedSamples) * 100) : 0;
+      invalidReasons.push(`${name}: got ${e.gotSamples} of ${e.expectedSamples} expected samples (${pct}%), below ${MIN_SAMPLE_SHARE * 100}%`);
+    }
+  }
+  return { valid: invalidReasons.length === 0, invalidReasons };
+}
+
 /** cited/total = queries (majority-cited / checked); rate = % of all samples that cited the domain. */
 function engineStats(rows: CitRow[]): EngineStats {
   const citedSamples = rows.reduce((a, r) => a + r.citedSamples, 0);
@@ -627,45 +705,41 @@ const stripAnswer = ({ query, cited, citedSamples, samples, competitors, competi
 const rowOut = (includeAnswers?: boolean) => (r: CitRow): CitRow => includeAnswers ? { ...stripAnswer(r), answers: r.answers ?? [] } : stripAnswer(r);
 
 async function queryPplxRaw(question: string, key: string): Promise<{ answer: string; citations: string[] }> {
-  try {
-    const res = await fetch("https://api.perplexity.ai/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "sonar", messages: [{ role: "user", content: question }], max_tokens: 500 }),
-      signal: AbortSignal.timeout(20000),
-    });
-    if (!res.ok) return { answer: "", citations: [] };
-    const data = await res.json() as any;
-    addCost("perplexity", perplexityCost(data.usage));
-    const answer: string = data.choices?.[0]?.message?.content ?? "";
-    const citations: string[] = (data.citations ?? []).map((c: any) => typeof c === "string" ? c : (c.url ?? "")).filter(Boolean);
-    return { answer, citations };
-  } catch { return { answer: "", citations: [] }; }
+  const res = await fetch("https://api.perplexity.ai/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "sonar", messages: [{ role: "user", content: question }], max_tokens: 500 }),
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!res.ok) throw httpError(res.status);
+  const data = await res.json() as any;
+  addCost("perplexity", perplexityCost(data.usage));
+  const answer: string = data.choices?.[0]?.message?.content ?? "";
+  const citations: string[] = (data.citations ?? []).map((c: any) => typeof c === "string" ? c : (c.url ?? "")).filter(Boolean);
+  return { answer, citations };
 }
 
 /** ChatGPT via the Responses API with the web search tool (gpt-4o-mini-search-preview was deprecated by 19/09/2026). */
 async function queryGPTRaw(question: string, key: string): Promise<{ answer: string; citations: string[] }> {
   const model = process.env.OPENAI_SEARCH_MODEL || "gpt-4.1-mini";
-  try {
-    const res = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, tools: [{ type: "web_search" }], input: question, max_output_tokens: 700 }),
-      signal: AbortSignal.timeout(40000),
-    });
-    if (!res.ok) return { answer: "", citations: [] };
-    const data = await res.json() as any;
-    if (data?.error) return { answer: "", citations: [] };
-    addCost("openai", openaiSearchCost(data.usage));
-    const messages: any[] = (data.output ?? []).filter((o: any) => o.type === "message");
-    const answer: string = messages.flatMap((m: any) => (m.content ?? []).filter((c: any) => c.type === "output_text").map((c: any) => c.text ?? "")).join("");
-    const citations: string[] = messages
-      .flatMap((m: any) => (m.content ?? []).flatMap((c: any) => c.annotations ?? []))
-      .filter((a: any) => a.type === "url_citation")
-      .map((a: any) => a.url ?? "")
-      .filter(Boolean);
-    return { answer, citations: [...new Set(citations)] };
-  } catch { return { answer: "", citations: [] }; }
+  const res = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model, tools: [{ type: "web_search" }], input: question, max_output_tokens: 700 }),
+    signal: AbortSignal.timeout(40000),
+  });
+  if (!res.ok) throw httpError(res.status);
+  const data = await res.json() as any;
+  if (data?.error) throw new Error(`api error ${String(data.error.code ?? data.error.type ?? "unknown").slice(0, 40)}`);
+  addCost("openai", openaiSearchCost(data.usage));
+  const messages: any[] = (data.output ?? []).filter((o: any) => o.type === "message");
+  const answer: string = messages.flatMap((m: any) => (m.content ?? []).filter((c: any) => c.type === "output_text").map((c: any) => c.text ?? "")).join("");
+  const citations: string[] = messages
+    .flatMap((m: any) => (m.content ?? []).flatMap((c: any) => c.annotations ?? []))
+    .filter((a: any) => a.type === "url_citation")
+    .map((a: any) => a.url ?? "")
+    .filter(Boolean);
+  return { answer, citations: [...new Set(citations)] };
 }
 
 /** A fetched Google SERP. shown=false: the page loaded but carried no AI answer, which counts as not cited. Failed fetches throw instead. */
@@ -744,48 +818,44 @@ async function queryGoogleAIMode(query: string, locationCode = 2840): Promise<Go
 /** Gemini with Google Search grounding. Grounding chunks carry a redirect URI and the source domain as title. */
 async function queryGeminiRaw(question: string, key: string): Promise<{ answer: string; citations: string[] }> {
   const model = process.env.GEMINI_MODEL || "gemini-flash-latest";
-  try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: "POST",
-      headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: question }] }], tools: [{ google_search: {} }] }),
-      signal: AbortSignal.timeout(30000),
-    });
-    if (!res.ok) return { answer: "", citations: [] };
-    const data = await res.json() as any;
-    addCost("gemini", geminiGroundedCost(data.usageMetadata));
-    const cand = data.candidates?.[0];
-    const answer: string = (cand?.content?.parts ?? []).map((p: any) => p.text ?? "").join("");
-    const citations: string[] = (cand?.groundingMetadata?.groundingChunks ?? [])
-      .map((c: any) => {
-        const title: string = c.web?.title ?? "";
-        const uri: string = c.web?.uri ?? "";
-        return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(title) ? `https://${title}/` : uri;
-      })
-      .filter(Boolean);
-    return { answer, citations };
-  } catch { return { answer: "", citations: [] }; }
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: "POST",
+    headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
+    body: JSON.stringify({ contents: [{ parts: [{ text: question }] }], tools: [{ google_search: {} }] }),
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!res.ok) throw httpError(res.status);
+  const data = await res.json() as any;
+  addCost("gemini", geminiGroundedCost(data.usageMetadata));
+  const cand = data.candidates?.[0];
+  const answer: string = (cand?.content?.parts ?? []).map((p: any) => p.text ?? "").join("");
+  const citations: string[] = (cand?.groundingMetadata?.groundingChunks ?? [])
+    .map((c: any) => {
+      const title: string = c.web?.title ?? "";
+      const uri: string = c.web?.uri ?? "";
+      return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(title) ? `https://${title}/` : uri;
+    })
+    .filter(Boolean);
+  return { answer, citations };
 }
 
 /** Claude with the web search tool. Sources come from the search result blocks and the text citations. */
 async function queryClaudeRaw(question: string): Promise<{ answer: string; citations: string[] }> {
-  try {
-    const res = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 700,
-      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 } as any],
-      messages: [{ role: "user", content: question }],
-    });
-    addCost("anthropic", anthropicCost("claude-haiku-4-5-20251001", res.usage as any));
-    const blocks: any[] = res.content as any[];
-    const answer = blocks.filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
-    const citations: string[] = [];
-    for (const b of blocks) {
-      if (b.type === "web_search_tool_result" && Array.isArray(b.content)) for (const r of b.content) if (r?.url) citations.push(r.url);
-      if (b.type === "text" && Array.isArray(b.citations)) for (const c of b.citations) if (c?.url) citations.push(c.url);
-    }
-    return { answer, citations: [...new Set(citations)] };
-  } catch { return { answer: "", citations: [] }; }
+  const res = await anthropic.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 700,
+    tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 } as any],
+    messages: [{ role: "user", content: question }],
+  });
+  addCost("anthropic", anthropicCost("claude-haiku-4-5-20251001", res.usage as any));
+  const blocks: any[] = res.content as any[];
+  const answer = blocks.filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
+  const citations: string[] = [];
+  for (const b of blocks) {
+    if (b.type === "web_search_tool_result" && Array.isArray(b.content)) for (const r of b.content) if (r?.url) citations.push(r.url);
+    if (b.type === "text" && Array.isArray(b.citations)) for (const c of b.citations) if (c?.url) citations.push(c.url);
+  }
+  return { answer, citations: [...new Set(citations)] };
 }
 
 async function runCheckLiveCitations(input: Record<string, any>): Promise<string> {
@@ -912,17 +982,22 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
 
 // ── Raw citation check (used by share-of-voice endpoint) ──────────────────────
 
+type EngineSummary = EngineStats & EngineCoverage & { results: CitRow[] };
+
 export type CitationSnapshot = {
   domain: string;
-  perplexity: EngineStats & { results: CitRow[] };
-  chatgpt: EngineStats & { results: CitRow[] };
-  gemini: EngineStats & { results: CitRow[] };
-  claude: EngineStats & { results: CitRow[] };
-  googleAIO: EngineStats & { results: CitRow[] };
-  googleAIMode: EngineStats & { results: CitRow[] };
+  perplexity: EngineSummary;
+  chatgpt: EngineSummary;
+  gemini: EngineSummary;
+  claude: EngineSummary;
+  googleAIO: EngineSummary;
+  googleAIMode: EngineSummary;
   unavailable: Record<string, string>;
   competitors: string[];
   sentiment: SentimentResult[];
+  /** true when every attempted engine got >= 80% of its expected samples (v3). */
+  valid: boolean;
+  invalidReasons: string[];
 };
 
 /** Single-sample check — share-of-voice runs 2–5 brands in parallel, so sampling is kept at 1 to bound cost. */
@@ -949,16 +1024,24 @@ export async function checkCitationsRaw(domain: string, queries: string[], sampl
     }
   }
 
+  const summary = (k: EngineKey): EngineSummary => ({ ...engineStats(c[k]), ...engineCoverage(c, k), results: c[k].map(out) });
+  const engines = {
+    perplexity: summary("pplx"), chatgpt: summary("gpt"), gemini: summary("gemini"),
+    claude: summary("claude"), googleAIO: summary("aio"), googleAIMode: summary("aimode"),
+  };
+  // Validity is reported under the /api/citations engine names.
+  const { valid, invalidReasons } = checkValidity({
+    chatgpt: engines.chatgpt, gemini: engines.gemini, google_ai: engines.googleAIO,
+    google_ai_mode: engines.googleAIMode, perplexity: engines.perplexity, claude: engines.claude,
+  });
+
   return {
     domain,
-    perplexity: { ...engineStats(c.pplx), results: c.pplx.map(out) },
-    chatgpt: { ...engineStats(c.gpt), results: c.gpt.map(out) },
-    gemini: { ...engineStats(c.gemini), results: c.gemini.map(out) },
-    claude: { ...engineStats(c.claude), results: c.claude.map(out) },
-    googleAIO: { ...engineStats(c.aio), results: c.aio.map(out) },
-    googleAIMode: { ...engineStats(c.aimode), results: c.aimode.map(out) },
+    ...engines,
     unavailable: c.unavailable,
     competitors: allCompetitors,
     sentiment,
+    valid,
+    invalidReasons,
   };
 }
