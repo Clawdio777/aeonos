@@ -394,6 +394,8 @@ type CitRow = {
   namedSamples?: number;
   /** Full text of every sampled answer, only when the caller asks for include_answers (06/10/2026). */
   answers?: string[];
+  /** Google surfaces only: did the fetched SERP carry an AI answer? false = not shown, counted as not cited (v3). */
+  shown?: boolean;
 };
 
 /** Options for Pemba's direct citation check (06/10/2026). */
@@ -541,9 +543,11 @@ async function sampleLlm(domain: string, query: string, n: number, run: () => Pr
   };
 }
 
-function serpRow(domain: string, query: string, text: string, sources: string[], brand: RegExp | null = null): LlmRow {
-  const { named, ...r } = extractCitationResult(domain, text, sources, brand);
-  return { ...r, query, citedSamples: r.cited ? 1 : 0, samples: 1, namedSamples: named ? 1 : 0, answer: text, answers: [text] };
+/** One row per fetched SERP. shown=false (no AI answer on the page) is a real sample that counts as not cited. */
+function serpRow(domain: string, query: string, g: GoogleAnswer, brand: RegExp | null = null): LlmRow {
+  if (!g.shown) return { query, cited: false, citedSamples: 0, samples: 1, competitors: [], competitorUrls: [], sources: [], namedSamples: 0, shown: false, answer: "", answers: [] };
+  const { named, ...r } = extractCitationResult(domain, g.text, g.sources, brand);
+  return { ...r, query, citedSamples: r.cited ? 1 : 0, samples: 1, namedSamples: named ? 1 : 0, shown: true, answer: g.text, answers: [g.text] };
 }
 
 type Collected = {
@@ -577,16 +581,17 @@ async function collectCitations(domain: string, queries: string[], samples: numb
         openaiKey ? (attempted.gpt++, sampleLlm(domain, q, samples, () => queryGPTRaw(q, openaiKey), brand)) : Promise.resolve(null),
         geminiKey ? (attempted.gemini++, sampleLlm(domain, q, samples, () => queryGeminiRaw(q, geminiKey), brand)) : Promise.resolve(null),
         claudeKey ? (attempted.claude++, sampleLlm(domain, q, samples, () => queryClaudeRaw(q), brand)) : Promise.resolve(null),
-        hasDFS ? (attempted.aio++, queryGoogleAIOverview(q, loc)) : Promise.resolve({ text: "", sources: [], shown: false }),
-        hasDFS ? (attempted.aimode++, queryGoogleAIMode(q, loc)) : Promise.resolve({ text: "", sources: [], shown: false }),
+        hasDFS ? (attempted.aio++, queryGoogleAIOverview(q, loc)) : Promise.resolve(null),
+        hasDFS ? (attempted.aimode++, queryGoogleAIMode(q, loc)) : Promise.resolve(null),
       ]);
       if (pplx.status === "fulfilled" && pplx.value) out.pplx.push(pplx.value);
       if (gpt.status === "fulfilled" && gpt.value) out.gpt.push(gpt.value);
       if (gemini.status === "fulfilled" && gemini.value) out.gemini.push(gemini.value);
       if (claude.status === "fulfilled" && claude.value) out.claude.push(claude.value);
       // Google surfaces: a fetched SERP with no AI answer is a genuine "not shown" and counts as not cited
-      if (aio.status === "fulfilled" && aio.value.shown) out.aio.push(serpRow(domain, q, aio.value.text, aio.value.sources, brand));
-      if (aimode.status === "fulfilled" && aimode.value.shown) out.aimode.push(serpRow(domain, q, aimode.value.text, aimode.value.sources, brand));
+      // A failed fetch (error, timeout) is not a row.
+      if (aio.status === "fulfilled" && aio.value) out.aio.push(serpRow(domain, q, aio.value, brand));
+      if (aimode.status === "fulfilled" && aimode.value) out.aimode.push(serpRow(domain, q, aimode.value, brand));
     }
   };
   await Promise.all(Array.from({ length: Math.min(QUERY_CONCURRENCY, ordered.length) }, worker));
@@ -615,8 +620,8 @@ function engineStats(rows: CitRow[]): EngineStats {
   return { cited: rows.filter((r) => r.cited).length, total: rows.length, citedSamples, samples, rate: samples ? Math.round((citedSamples / samples) * 100) : 0 };
 }
 
-const stripAnswer = ({ query, cited, citedSamples, samples, competitors, competitorUrls, sources, stance, namedSamples }: CitRow): CitRow =>
-  ({ query, cited, citedSamples, samples, competitors, competitorUrls, sources, stance: cited ? (stance ?? null) : undefined, namedSamples });
+const stripAnswer = ({ query, cited, citedSamples, samples, competitors, competitorUrls, sources, stance, namedSamples, shown }: CitRow): CitRow =>
+  ({ query, cited, citedSamples, samples, competitors, competitorUrls, sources, stance: cited ? (stance ?? null) : undefined, namedSamples, shown });
 
 /** stripAnswer, keeping every sampled answer's text when the caller asked for it. */
 const rowOut = (includeAnswers?: boolean) => (r: CitRow): CitRow => includeAnswers ? { ...stripAnswer(r), answers: r.answers ?? [] } : stripAnswer(r);
@@ -663,7 +668,13 @@ async function queryGPTRaw(question: string, key: string): Promise<{ answer: str
   } catch { return { answer: "", citations: [] }; }
 }
 
+/** A fetched Google SERP. shown=false: the page loaded but carried no AI answer, which counts as not cited. Failed fetches throw instead. */
 type GoogleAnswer = { text: string; sources: string[]; shown: boolean };
+
+/** Short failure reason for an HTTP status: "rate limit" for 429, "http <status>" otherwise. */
+function httpError(status: number): Error {
+  return new Error(status === 429 ? "rate limit" : `http ${status}`);
+}
 
 function markdownLinks(md: string): string[] {
   return [...md.matchAll(/\]\((https?:\/\/[^)\s]+)\)/g)].map((m) => m[1]);
@@ -679,57 +690,55 @@ function dfsAuth(): string | null {
 /** Google AI Overview for the query. The /regular endpoint never returned one; /advanced with load_async_ai_overview does. */
 async function queryGoogleAIOverview(query: string, locationCode = 2840): Promise<GoogleAnswer> {
   const auth = dfsAuth();
-  if (!auth) return { text: "", sources: [], shown: false };
-  try {
-    const res = await fetch("https://api.dataforseo.com/v3/serp/google/organic/live/advanced", {
-      method: "POST",
-      headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
-      body: JSON.stringify([{ keyword: query, location_code: locationCode, language_code: "en", device: "desktop", depth: 10, load_async_ai_overview: true }]),
-      signal: AbortSignal.timeout(20000),
-    });
-    if (!res.ok) return { text: "", sources: [], shown: false };
-    const data = await res.json() as any;
-    addCost("dataforseo", Number(data.tasks?.[0]?.cost) || 0);
-    if (data.tasks?.[0]?.status_code !== 20000) return { text: "", sources: [], shown: false };
-    const items: any[] = data.tasks?.[0]?.result?.[0]?.items ?? [];
-    const aio = items.find((item: any) => item.type === "ai_overview");
-    if (!aio) return { text: "", sources: [], shown: false };
-    const text: string = aio.markdown ?? aio.text ?? (aio.items ?? []).map((i: any) => i.text ?? "").join(" ");
-    const sources: string[] = [
-      ...(aio.references ?? []).map((i: any) => i.url ?? ""),
-      ...(aio.items ?? []).flatMap((i: any) => (i.references ?? []).map((r: any) => r.url ?? "")),
-      ...markdownLinks(text),
-    ].filter(Boolean);
-    return { text, sources: [...new Set(sources)], shown: true };
-  } catch { return { text: "", sources: [], shown: false }; }
+  if (!auth) throw new Error("no DataForSEO credentials");
+  const res = await fetch("https://api.dataforseo.com/v3/serp/google/organic/live/advanced", {
+    method: "POST",
+    headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
+    body: JSON.stringify([{ keyword: query, location_code: locationCode, language_code: "en", device: "desktop", depth: 10, load_async_ai_overview: true }]),
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!res.ok) throw httpError(res.status);
+  const data = await res.json() as any;
+  addCost("dataforseo", Number(data.tasks?.[0]?.cost) || 0);
+  const code = data.tasks?.[0]?.status_code;
+  if (code !== 20000) throw new Error(`dataforseo status ${code ?? "missing"}`);
+  const items: any[] = data.tasks?.[0]?.result?.[0]?.items ?? [];
+  const aio = items.find((item: any) => item.type === "ai_overview");
+  if (!aio) return { text: "", sources: [], shown: false };
+  const text: string = aio.markdown ?? aio.text ?? (aio.items ?? []).map((i: any) => i.text ?? "").join(" ");
+  const sources: string[] = [
+    ...(aio.references ?? []).map((i: any) => i.url ?? ""),
+    ...(aio.items ?? []).flatMap((i: any) => (i.references ?? []).map((r: any) => r.url ?? "")),
+    ...markdownLinks(text),
+  ].filter(Boolean);
+  return { text, sources: [...new Set(sources)], shown: true };
 }
 
 /** Google AI Mode answer for the query (DataForSEO serp/google/ai_mode). */
 async function queryGoogleAIMode(query: string, locationCode = 2840): Promise<GoogleAnswer> {
   const auth = dfsAuth();
-  if (!auth) return { text: "", sources: [], shown: false };
-  try {
-    const res = await fetch("https://api.dataforseo.com/v3/serp/google/ai_mode/live/advanced", {
-      method: "POST",
-      headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
-      body: JSON.stringify([{ keyword: query, location_code: locationCode, language_code: "en" }]),
-      signal: AbortSignal.timeout(20000),
-    });
-    if (!res.ok) return { text: "", sources: [], shown: false };
-    const data = await res.json() as any;
-    addCost("dataforseo", Number(data.tasks?.[0]?.cost) || 0);
-    if (data.tasks?.[0]?.status_code !== 20000) return { text: "", sources: [], shown: false };
-    const items: any[] = data.tasks?.[0]?.result?.[0]?.items ?? [];
-    const answer = items.find((item: any) => item.type === "ai_overview" || item.type === "ai_mode");
-    if (!answer) return { text: "", sources: [], shown: false };
-    const text: string = answer.markdown ?? answer.text ?? "";
-    const sources: string[] = [
-      ...(answer.references ?? []).map((i: any) => i.url ?? ""),
-      ...(answer.items ?? []).flatMap((i: any) => (i.references ?? []).map((r: any) => r.url ?? "")),
-      ...markdownLinks(text),
-    ].filter(Boolean);
-    return { text, sources: [...new Set(sources)], shown: true };
-  } catch { return { text: "", sources: [], shown: false }; }
+  if (!auth) throw new Error("no DataForSEO credentials");
+  const res = await fetch("https://api.dataforseo.com/v3/serp/google/ai_mode/live/advanced", {
+    method: "POST",
+    headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
+    body: JSON.stringify([{ keyword: query, location_code: locationCode, language_code: "en" }]),
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!res.ok) throw httpError(res.status);
+  const data = await res.json() as any;
+  addCost("dataforseo", Number(data.tasks?.[0]?.cost) || 0);
+  const code = data.tasks?.[0]?.status_code;
+  if (code !== 20000) throw new Error(`dataforseo status ${code ?? "missing"}`);
+  const items: any[] = data.tasks?.[0]?.result?.[0]?.items ?? [];
+  const answer = items.find((item: any) => item.type === "ai_overview" || item.type === "ai_mode");
+  if (!answer) return { text: "", sources: [], shown: false };
+  const text: string = answer.markdown ?? answer.text ?? "";
+  const sources: string[] = [
+    ...(answer.references ?? []).map((i: any) => i.url ?? ""),
+    ...(answer.items ?? []).flatMap((i: any) => (i.references ?? []).map((r: any) => r.url ?? "")),
+    ...markdownLinks(text),
+  ].filter(Boolean);
+  return { text, sources: [...new Set(sources)], shown: true };
 }
 
 /** Gemini with Google Search grounding. Grounding chunks carry a redirect URI and the source domain as title. */
@@ -871,7 +880,7 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
   const summaryLine = (e: typeof engines[number]) => {
     const reason = c.unavailable[e.unavailableKey];
     if (reason) return `${e.label}: NOT SAMPLED (${reason})`;
-    if (!e.rows.length) return `${e.label}: NOT SAMPLED (${e.llm ? "no answers returned" : "no AI answer shown for these queries"})`;
+    if (!e.rows.length) return `${e.label}: NOT SAMPLED (${e.llm ? "no answers returned" : "every SERP fetch failed"})`;
     return `${e.label}: ${e.llm ? llmLine(stats[e.key]) : serpLine(stats[e.key])}`;
   };
   const maxSamples = Math.max(1, ...measured.map((e) => stats[e.key].samples));
@@ -881,7 +890,7 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
     `Method: ${samples} samples per query on ChatGPT, Gemini, Perplexity and Claude, one fetch per query for Google AI Overviews and AI Mode (✅ = cited in a majority of samples); a change under ~${Math.round(100 / Math.sqrt(maxSamples))}pp between runs is within sampling noise. Engines marked NOT SAMPLED returned nothing and must be reported as unknown, never as 0%. Bing/Copilot is not measured (no reliable source).`,
     "",
     ...engines.flatMap((e) => e.rows.map((r) =>
-      `${r.cited ? "✅" : "❌"} [${e.label}] "${r.query}"${sampleNote(r)}\n   ${r.cited ? `Cited: ${r.sources.join(", ")}` : `Cited instead: ${(r.competitorUrls.length ? r.competitorUrls : r.competitors).join(", ") || "none identified"}`}`
+      `${r.cited ? "✅" : "❌"} [${e.label}] "${r.query}"${sampleNote(r)}\n   ${r.shown === false ? "No AI answer shown on the page (counts as not cited)" : r.cited ? `Cited: ${r.sources.join(", ")}` : `Cited instead: ${(r.competitorUrls.length ? r.competitorUrls : r.competitors).join(", ") || "none identified"}`}`
     )),
     "",
     allCompetitors.length ? `Competitor domains appearing instead: ${allCompetitors.join(", ")}` : "",
