@@ -81,6 +81,9 @@ async function main() {
     } else {
       const err = await paid.text();
       console.error(`❌ Payment failed: ${paid.status} ${err}`);
+      const rest = targets.slice(targets.indexOf(name) + 1);
+      if (rest.length) console.error(`Stopped before paying for: ${rest.join(", ")}`);
+      process.exit(1);
     }
   }
 
