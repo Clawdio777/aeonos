@@ -14,13 +14,13 @@ import { runAgent } from "../src/agent.js";
 const PRICE_USDC = 2.50;
 const BASE_URL   = () => process.env.AGENT_BASE_URL || "https://aeonos.basechainlabs.com";
 const RESOURCE_URL  = () => `${BASE_URL()}/api/audit`;
-const RESOURCE_DESC = "Full AI search visibility audit — AEO/GEO/SEO 4-layer strategy, AI inclusion check, schema gaps, llms.txt review, P1/P2/P3 roadmap. 2.50 USDC.";
+const RESOURCE_DESC = "Full AI search visibility audit: AEO/GEO/SEO 4-layer strategy, AI inclusion check, schema gaps, llms.txt review, P1/P2/P3 roadmap. 2.50 USDC.";
 
 const BAZAAR = buildBazaarExtension({
-  serviceName:      "AEONOS — Full Audit",
+  serviceName:      "AEONOS: Full Audit",
   queryDescription: "Your real site URL or business to audit (replace YOUR-SITE.com). E.g. 'Audit https://yourdomain.com for AI search visibility'.",
   queryExample:     "Audit https://YOUR-SITE.com for AEO readiness and give me a full P1/P2/P3 action plan",
-  outputExample:    "# AEO Audit: mysite.com\n\n**Overall Score: 62/100**\n\n## P1 — Do This Week\n1. Add FAQPage JSON-LD schema...",
+  outputExample:    "# AEO Audit: YOUR-SITE.com\n\n**Overall Score: 62/100**\n\n## P1: Do This Week\n1. Add FAQPage JSON-LD schema...",
 });
 
 const db = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!);
