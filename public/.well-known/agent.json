@@ -90,7 +90,7 @@
     {
       "id": "share_of_voice",
       "name": "AI Share of Voice",
-      "description": "Call when you need to know which brand AI answer engines actually name. Compare 2 to 5 brands across ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude. Input: JSON body with brands (2 to 5 domains, yours first) and queries (buyer questions to ask each engine). Output: the % of queries where each brand is cited, per engine, in structured markdown.",
+      "description": "Call when you need to know which brand AI answer engines actually name. Compare 2 to 5 brands across ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude. Input: JSON body with brands (2 to 5 domains, yours first) and queries (buyer questions to ask each engine). Output: each brand's share of all citations across the brands you compare, per engine, in structured markdown.",
       "endpoint": "https://aeonos.basechainlabs.com/api/share-of-voice",
       "price": "1.50 USDC",
       "inputModes": ["text"],

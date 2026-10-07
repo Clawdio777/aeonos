@@ -58,7 +58,7 @@ Onboarding agent
 | `POST /api/schema` | **0.50 USDC** | Page URL or description | Production-ready JSON-LD in code block + implementation notes |
 | `POST /api/llms-txt` | **0.50 USDC** | URL or business description | Complete deployable llms.txt file in Markdown |
 | `POST /api/progress` | **1.50 USDC** | URL or business description | Four Layers scores (SXO/AIO/GEO/AEO) + next 3 actions |
-| `POST /api/share-of-voice` | **1.50 USDC** | 2 to 5 brands + queries | % of AI answers naming each brand, per engine |
+| `POST /api/share-of-voice` | **1.50 USDC** | 2 to 5 brands + queries | Each brand's share of AI citations across the brands compared, per engine |
 
 Base URL: `https://aeonos.basechainlabs.com`  
 Payment: x402 v2 · USDC on Base (eip155:8453) · No API key required
