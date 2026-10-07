@@ -14,10 +14,10 @@ import { runAgent } from "../src/agent.js";
 const PRICE_USDC    = 0.50;
 const BASE_URL      = () => process.env.AGENT_BASE_URL || "https://aeonos.basechainlabs.com";
 const RESOURCE_URL  = () => `${BASE_URL()}/api/schema`;
-const RESOURCE_DESC = "JSON-LD Schema.org markup generation for AI search visibility — FAQPage, Product, Service, LocalBusiness, HowTo and more. Boosts AI citations and rich results. 0.50 USDC.";
+const RESOURCE_DESC = "JSON-LD Schema.org markup generation for AI search visibility: FAQPage, Product, Service, LocalBusiness, HowTo and more. Boosts AI citations and rich results. 0.50 USDC.";
 
 const BAZAAR = buildBazaarExtension({
-  serviceName:      "AEONOS — Schema Generator",
+  serviceName:      "AEONOS: Schema Generator",
   queryDescription: "Your real page URL (replace YOUR-SITE.com) or a description of the page. E.g. 'Generate JSON-LD for https://yourdomain.com/pricing'.",
   queryExample:     "Generate complete JSON-LD schema markup for https://YOUR-SITE.com/pricing",
   outputExample:    "```json\n{\n  \"@context\": \"https://schema.org\",\n  \"@type\": \"FAQPage\",\n  \"mainEntity\": [...]\n}\n```",

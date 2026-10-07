@@ -26,7 +26,7 @@
       "outputModes": ["text"],
       "tags": ["aeo", "geo", "ai-visibility", "seo", "citations", "perplexity", "chatgpt", "google-ai-overviews"],
       "examples": [
-        "What schema markup should I add to mysite.com to get cited in ChatGPT?",
+        "What schema markup should I add to https://YOUR-SITE.com to get cited in ChatGPT?",
         "Give me 3 immediate GEO quick wins for a B2B SaaS landing page",
         "How do I get cited by Perplexity for 'best booking software for salons'?"
       ]
@@ -41,8 +41,8 @@
       "outputModes": ["text"],
       "tags": ["audit", "aeo", "geo", "ai-readiness", "seo-audit", "content-strategy"],
       "examples": [
-        "Audit mysite.com for AI search visibility, full P1/P2/P3 action plan",
-        "Run the AEONOS Four Layers audit on example.com and score each layer"
+        "Audit https://YOUR-SITE.com for AI search visibility and get a P1/P2/P3 action plan",
+        "Run the AEONOS Four Layers audit on https://YOUR-SITE.com and score each layer"
       ]
     },
     {
@@ -55,7 +55,7 @@
       "outputModes": ["text"],
       "tags": ["schema", "json-ld", "structured-data", "faq-schema", "rich-results", "aeo"],
       "examples": [
-        "Generate JSON-LD schema for mysite.com/pricing, B2B SaaS, $49/mo plan",
+        "Generate JSON-LD schema for https://YOUR-SITE.com/pricing, B2B SaaS, $49/mo plan",
         "Write FAQPage schema with 10 Q&As for a physiotherapy clinic homepage"
       ]
     },
@@ -69,7 +69,7 @@
       "outputModes": ["text"],
       "tags": ["llms-txt", "ai-crawler", "chatgpt", "perplexity", "claude", "geo", "aeo"],
       "examples": [
-        "Write a complete llms.txt for mysite.com, B2B SaaS for salon booking, $49/mo",
+        "Write a complete llms.txt for https://YOUR-SITE.com, B2B SaaS for salon booking, $49/mo",
         "Generate llms.txt for drinklongbrew.com, Australian freeze-dried cold brew coffee"
       ]
     },
@@ -83,8 +83,22 @@
       "outputModes": ["text"],
       "tags": ["aeo", "geo", "progress-report", "four-layers", "ai-visibility", "scoring"],
       "examples": [
-        "Generate an AEO Four Layers progress report for mysite.com",
+        "Generate an AEO Four Layers progress report for https://YOUR-SITE.com",
         "Score my GEO strategy and tell me the 3 highest-impact improvements"
+      ]
+    },
+    {
+      "id": "share_of_voice",
+      "name": "AI Share of Voice",
+      "description": "Call when you need to know which brand AI answer engines actually name. Compare 2 to 5 brands across ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude. Input: JSON body with brands (2 to 5 domains, yours first) and queries (buyer questions to ask each engine). Output: the % of queries where each brand is cited, per engine, in structured markdown.",
+      "endpoint": "https://aeonos.basechainlabs.com/api/share-of-voice",
+      "price": "1.50 USDC",
+      "inputModes": ["text"],
+      "outputModes": ["text"],
+      "tags": ["aeo", "geo", "ai-visibility", "share-of-voice", "citations", "competitors", "chatgpt", "perplexity", "google-ai-overviews"],
+      "examples": [
+        "Compare https://YOUR-SITE.com with 2 competitors for 'best salon booking software' across AI engines",
+        "Which of these 4 accounting firms do ChatGPT and Perplexity name for 'small business accountant Melbourne'?"
       ]
     }
   ],
@@ -93,7 +107,8 @@
     "full_audit":  "2.50 USDC",
     "schema":      "0.50 USDC",
     "llms_txt":    "0.50 USDC",
-    "progress":    "1.50 USDC"
+    "progress":    "1.50 USDC",
+    "share_of_voice": "1.50 USDC"
   },
   "useCases": [
     "Content generation agents call AEONOS before publishing to ensure AI engine citation",
