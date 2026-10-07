@@ -14,13 +14,13 @@ import { runAgent } from "../src/agent.js";
 const PRICE_USDC    = 1.50;
 const BASE_URL      = () => process.env.AGENT_BASE_URL || "https://aeonos.basechainlabs.com";
 const RESOURCE_URL  = () => `${BASE_URL()}/api/progress`;
-const RESOURCE_DESC = "AI search visibility progress report — Four Layers scoring (SXO/AIO/GEO/AEO), what's working, gaps, and your next 3 highest-impact actions. 1.50 USDC.";
+const RESOURCE_DESC = "AI search visibility progress report: Four Layers scoring (SXO/AIO/GEO/AEO), what's working, gaps, and your next 3 highest-impact actions. 1.50 USDC.";
 
 const BAZAAR = buildBazaarExtension({
-  serviceName:      "AEONOS — Progress Report",
+  serviceName:      "AEONOS: Progress Report",
   queryDescription: "Your real site URL (replace YOUR-SITE.com) or business to report on. E.g. 'Generate a progress report for https://yourdomain.com'.",
   queryExample:     "Generate an AEO Four Layers progress report for https://YOUR-SITE.com",
-  outputExample:    "# AEO Progress Report: mysite.com\n\n## Four Layers Scores\n- SXO: 72/100\n- AIO: 58/100\n- GEO: 44/100\n- AEO: 61/100\n\n## What's Working\n...\n\n## Next 3 Actions\n...",
+  outputExample:    "# AEO Progress Report: YOUR-SITE.com\n\n## Four Layers Scores\n- SXO: 72/100\n- AIO: 58/100\n- GEO: 44/100\n- AEO: 61/100\n\n## What's Working\n...\n\n## Next 3 Actions\n...",
 });
 
 const db = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!);

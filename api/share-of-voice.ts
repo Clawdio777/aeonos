@@ -14,10 +14,10 @@ import { checkCitationsRaw, isSharedCallerId, type CitationSnapshot } from "../s
 const PRICE_USDC    = 1.50;
 const BASE_URL      = () => process.env.AGENT_BASE_URL || "https://aeonos.basechainlabs.com";
 const RESOURCE_URL  = () => `${BASE_URL()}/api/share-of-voice`;
-const RESOURCE_DESC = "AI share of voice — compare 2-5 brands across ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude. Returns % of queries where each brand is cited per engine. 1.50 USDC.";
+const RESOURCE_DESC = "AI share of voice: compare 2 to 5 brands across ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude. Returns each brand's share of all citations across the brands compared, per engine. 1.50 USDC.";
 
 const BAZAAR = buildBazaarExtension({
-  serviceName:      "AEONOS — Share of Voice",
+  serviceName:      "AEONOS: Share of Voice",
   queryDescription: "Brands to compare (2-5 domains) and queries to run. E.g. brands: ['pemba.ai','competitor.com'], queries: ['best AI salon software']",
   queryExample:     "Compare share of voice: pemba.ai vs booksy.com vs fresha.com for 'best salon booking app'",
   body: {
@@ -28,7 +28,7 @@ const BAZAAR = buildBazaarExtension({
     },
     required: ["brands", "queries"],
   },
-  outputExample:    "## Share of Voice — AI Search\n\n| Brand | ChatGPT | Gemini | Google AIO | Google AI Mode | Perplexity | Claude |\n|---|---|---|---|---|---|---|\n| pemba.ai | 40% | 20% | 0% | 20% | 60% | 40% |\n| booksy.com | 40% | 60% | 100% | 80% | 20% | 20% |",
+  outputExample:    "## Share of Voice: AI Search\n\n| Brand | ChatGPT | Gemini | Google AIO | Google AI Mode | Perplexity | Claude |\n|---|---|---|---|---|---|---|\n| pemba.ai | 40% | 20% | 0% | 20% | 60% | 40% |\n| booksy.com | 40% | 60% | 100% | 80% | 20% | 20% |",
 });
 
 const db = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!);
@@ -143,7 +143,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }).filter(Boolean).join("\n");
 
     const report = [
-      `## AI Share of Voice — ${brands.join(" vs ")}`,
+      `## AI Share of Voice: ${brands.join(" vs ")}`,
       `Queries: ${queries.length} | Engines: ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity, Claude`,
       "",
       "### Overall Combined Share",
