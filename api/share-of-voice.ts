@@ -14,7 +14,7 @@ import { checkCitationsRaw, isSharedCallerId, type CitationSnapshot } from "../s
 const PRICE_USDC    = 1.50;
 const BASE_URL      = () => process.env.AGENT_BASE_URL || "https://aeonos.basechainlabs.com";
 const RESOURCE_URL  = () => `${BASE_URL()}/api/share-of-voice`;
-const RESOURCE_DESC = "AI share of voice: compare 2 to 5 brands across ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude. Returns % of queries where each brand is cited per engine. 1.50 USDC.";
+const RESOURCE_DESC = "AI share of voice: compare 2 to 5 brands across ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude. Returns each brand's share of all citations across the brands compared, per engine. 1.50 USDC.";
 
 const BAZAAR = buildBazaarExtension({
   serviceName:      "AEONOS: Share of Voice",
