@@ -58,11 +58,12 @@ const OFFERING_PROMPTS = {
     `Generate a structured AEO progress report for: ${q}. Score each of the Four Layers (Technical/SXO, Content/AIO, Authority/GEO, Citation/AEO) from 0–100 with specific reasons. Identify the top 3 things working, the top 3 things broken, and give exactly 3 priority actions ranked by impact. Use the progress report format — not a strategy overview.`,
 };
 
-// Sweep: split USDC earnings — top up Pemba buyer wallet first, rest to personal wallet
-const SWEEP_DEST      = "0x282d873b3737144b45c507320c12f22edfd51fe3"; // personal/business wallet
+// Sweep: ALL USDC earnings go to the Pemba buyer wallet, which pays for AEONOS calls, so AEONOS funds its own
+// usage. Carly moves any excess to her own wallet by hand (her decision, 10/10/2026; was: top Pemba up to $10,
+// rest to the personal wallet 0x282d873b3737144b45c507320c12f22edfd51fe3).
 const PEMBA_WALLET    = "0x1E45B323B94Bfe39eac03E27431A6866193AcC1B"; // Pemba buyer wallet (pays for AEONOS calls)
-const PEMBA_TARGET    = 10.00; // USDC to keep in Pemba wallet (~5 wks of audits: 4×$1.50 + 1×$2.50)
 const SWEEP_THRESHOLD = 10.00; // USDC — only sweep if AEONOS balance ≥ this
+const SWEEP_EVERY_MS  = 6 * 60 * 60 * 1000; // also sweep on a timer: most earnings now arrive outside ACP jobs
 const USDC_CONTRACT   = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"; // USDC on Base
 const BASE_RPC        = "https://mainnet.base.org";
 
@@ -318,30 +319,9 @@ async function sweepIfNeeded() {
       return;
     }
 
-    log(`[Sweep] ${balance} USDC ≥ ${SWEEP_THRESHOLD} — calculating split`);
-
-    // Check how much Pemba wallet currently has, top it up to PEMBA_TARGET
-    const pembaBalance = await getUSDCBalance(PEMBA_WALLET);
-    const pembaTopup   = Math.max(0, parseFloat((PEMBA_TARGET - pembaBalance).toFixed(6)));
-    const toPersonal   = parseFloat(Math.max(0, balance - pembaTopup).toFixed(6));
-
-    log(`[Sweep] Pemba wallet has ${pembaBalance} USDC — topup ${pembaTopup}, personal ${toPersonal}`);
-
-    // 1. Top up Pemba wallet if it needs it
-    if (pembaTopup >= 0.01) {
-      const tx1 = sendUSDC(PEMBA_WALLET, pembaTopup);
-      log(`[Sweep] Pemba top-up ${pembaTopup} USDC. TX: ${tx1}`);
-    } else {
-      log(`[Sweep] Pemba wallet already funded (${pembaBalance} USDC) — skipping top-up`);
-    }
-
-    // 2. Send remainder to personal/business wallet
-    if (toPersonal >= 0.01) {
-      const tx2 = sendUSDC(SWEEP_DEST, toPersonal);
-      log(`[Sweep] Personal sweep ${toPersonal} USDC. TX: ${tx2}`);
-    } else {
-      log(`[Sweep] Nothing left for personal wallet after Pemba top-up`);
-    }
+    const amount = parseFloat(balance.toFixed(6));
+    const tx = sendUSDC(PEMBA_WALLET, amount);
+    log(`[Sweep] ${amount} USDC → Pemba wallet ${PEMBA_WALLET}. TX: ${tx}`);
   } catch (e) {
     log("[Sweep] ERROR:", e.message.slice(0, 200));
   }
@@ -402,3 +382,7 @@ process.on("unhandledRejection", (e) => log("unhandledRejection:", String(e)));
 
 log("AEONOS seller-v2 started. Logs:", LOG_DIR);
 startEventStream();
+
+// Timed sweep (10/10/2026): x402/PayGate earnings never trigger the post-job sweep, so US$36 sat unswept.
+setTimeout(() => sweepIfNeeded().catch(e => log("[Sweep] unhandled:", e.message)), 60_000);
+setInterval(() => sweepIfNeeded().catch(e => log("[Sweep] unhandled:", e.message)), SWEEP_EVERY_MS);
