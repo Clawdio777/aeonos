@@ -309,11 +309,14 @@ async function sweepIfNeeded() {
       "wallet", "balance", "--chain-id", String(CHAIN_ID),
     ], { encoding: "utf8", timeout: 30_000, env: acpEnv() });
 
-    // Parse USDC row: "USDC  USD Coin  1.23  $1.23  0x833..."
-    const match = balOut.match(/^USDC\s+\S+\s+([\d.]+)/m);
-    if (!match) { log("[Sweep] Could not parse USDC balance"); return; }
+    // acp CLI (10/2026) prints tab-separated rows: NETWORK  TOKEN  NAME  BALANCE  USD  CONTRACT.
+    // Match on the real USDC contract, never the symbol: the wallet holds look-alike "USDC" spam tokens.
+    const row = balOut.split("\n").map(l => l.split("\t").map(c => c.trim()))
+      .find(c => c.length >= 6 && c[5].toLowerCase() === USDC_CONTRACT.toLowerCase());
+    if (!row) { log("[Sweep] Could not find the USDC row (contract " + USDC_CONTRACT + ") in acp wallet balance"); return; }
 
-    const balance = parseFloat(match[1]);
+    const balance = parseFloat(row[3]);
+    if (!Number.isFinite(balance)) { log("[Sweep] USDC balance not a number: " + row[3]); return; }
     if (balance < SWEEP_THRESHOLD) {
       log(`[Sweep] ${balance} USDC — below threshold, skipping`);
       return;
