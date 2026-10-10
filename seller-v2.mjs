@@ -63,6 +63,7 @@ const OFFERING_PROMPTS = {
 // rest to the personal wallet 0x282d873b3737144b45c507320c12f22edfd51fe3).
 const PEMBA_WALLET    = "0x1E45B323B94Bfe39eac03E27431A6866193AcC1B"; // Pemba buyer wallet (pays for AEONOS calls)
 const SWEEP_THRESHOLD = 10.00; // USDC — only sweep if AEONOS balance ≥ this
+const SWEEP_FEE_BUFFER = 1.00; // USDC left behind to pay the wallet's own network fee
 const SWEEP_EVERY_MS  = 6 * 60 * 60 * 1000; // also sweep on a timer: most earnings now arrive outside ACP jobs
 const USDC_CONTRACT   = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"; // USDC on Base
 const BASE_RPC        = "https://mainnet.base.org";
@@ -322,9 +323,17 @@ async function sweepIfNeeded() {
       return;
     }
 
-    const amount = parseFloat(balance.toFixed(6));
+    // Keep a buffer: this smart wallet pays its network fee from its own balance, so sending 100% reverted
+    // (UserOperation success=false on 10/10/2026, tx 0x4284276d…) while the bundle tx itself "succeeded".
+    const amount = parseFloat((balance - SWEEP_FEE_BUFFER).toFixed(6));
+    if (amount < 0.01) { log(`[Sweep] ${balance} USDC — nothing to send after the ${SWEEP_FEE_BUFFER} fee buffer`); return; }
+    const before = await getUSDCBalance(PEMBA_WALLET);
     const tx = sendUSDC(PEMBA_WALLET, amount);
-    log(`[Sweep] ${amount} USDC → Pemba wallet ${PEMBA_WALLET}. TX: ${tx}`);
+    // Only report success once the Pemba wallet actually went up.
+    let after = before;
+    for (let i = 0; i < 12 && after < before + amount - 0.001; i++) { await new Promise(r => setTimeout(r, 10_000)); after = await getUSDCBalance(PEMBA_WALLET); }
+    if (after >= before + amount - 0.001) log(`[Sweep] OK ${amount} USDC → Pemba wallet ${PEMBA_WALLET} (now ${after}). TX: ${tx}`);
+    else log(`[Sweep] ERROR: sent ${amount} USDC but the Pemba wallet did not go up (still ${after}); the transfer probably reverted. TX: ${tx}`);
   } catch (e) {
     log("[Sweep] ERROR:", e.message.slice(0, 200));
   }
