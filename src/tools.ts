@@ -459,16 +459,31 @@ export const CITATION_RETRY = {
    * for pemba.ai (2840). A failed fetch costs US$0.002, so more tries are cheap.
    */
   serpAttempts: 6,
-  /** Backoff before retry n is baseDelayMs × 2^(n-1), capped at 15 s, ±25% jitter; a 429 Retry-After header wins when longer. */
+  /** Tries per call that keeps getting 429 rate limit, the first included (other failures get `attempts`). */
+  rateLimitAttempts: 6,
+  /**
+   * Backoff before retry n is baseDelayMs × 2^(n-1), capped at 15 s. Other failures get ±25% jitter; a 429 gets
+   * 50-150% jitter so the two parallel Pemba chunks do not retry in step, and its Retry-After header wins when present.
+   */
   baseDelayMs: 2000,
+  /**
+   * Least gap between two Perplexity call starts within one check (12/10/2026). Sonar Chat Completions became Agent API
+   * requests on 27/09/2026, so the Agent API limit applies: the account is Tier 1, 3 requests per rolling 1 s window and
+   * 150 a minute, per organisation, and the one key is shared with Sailor. One start a second per check keeps Pemba's two
+   * parallel chunks at 2 a second and 120 a minute at most, leaving room for Sailor.
+   */
+  pplxStartGapMs: 1000,
   /** No retry is started after this long into the run. */
   retryUntilMs: 150_000,
   /** No call is started after this long, and every call's timeout is cut to end by then. */
   hardStopMs: 210_000,
 };
 
-/** Calls in flight per provider within one check. Perplexity's burst limit is the tight one. */
-const PROVIDER_CONCURRENCY = { pplx: 3, gpt: 6, gemini: 6, claude: 6, dataforseo: 12 } as const;
+/**
+ * Calls in flight per provider within one check. Perplexity's is the tight one: 3 per check still drew 429s on the
+ * 12/10/2026 weekly retakes (Pemba sends 2 chunks at once, so 6 in flight against a 3-per-second limit).
+ */
+export const PROVIDER_CONCURRENCY = { pplx: 2, gpt: 6, gemini: 6, claude: 6, dataforseo: 12 } as const;
 
 /** Per-call timeouts. DataForSEO live SERP tasks can legitimately take 20-60 s when an AI Overview loads. */
 const CALL_TIMEOUT_MS = { pplx: 30_000, gpt: 40_000, gemini: 45_000, claude: 45_000, dataforseo: 60_000 } as const;
@@ -485,19 +500,42 @@ export function isRetryable(e: unknown): boolean {
   return reason === "timeout" || reason === "empty" || /fetch failed|ECONNRESET|socket|network/i.test(reason);
 }
 
-/** Runs at most `max` calls at a time; the rest wait their turn. */
-export function makeLimiter(max: number) {
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Runs at most `max` calls at a time, and starts them at least `minGapMs` apart; the rest wait their turn. */
+export function makeLimiter(max: number, minGapMs = 0) {
   let active = 0;
+  let nextStart = 0;
   const waiting: (() => void)[] = [];
   return async <T>(fn: () => Promise<T>): Promise<T> => {
     while (active >= max) await new Promise<void>((resolve) => waiting.push(resolve));
     active++;
-    try { return await fn(); } finally { active--; waiting.shift()?.(); }
+    try {
+      if (minGapMs > 0) {
+        const now = Date.now();
+        const at = Math.max(now, nextStart);
+        nextStart = at + minGapMs;
+        if (at > now) await sleep(at - now);
+      }
+      return await fn();
+    } finally { active--; waiting.shift()?.(); }
   };
 }
 type Limiter = ReturnType<typeof makeLimiter>;
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * Wait before retry `attempt` (1 = the first retry). A 429 honours Retry-After when the provider sends one (plus up to
+ * 1 s jitter), otherwise exponential backoff with 50-150% jitter. Other failures: exponential with ±25% jitter.
+ */
+export function retryDelayMs(attempt: number, e: unknown, rand: () => number = Math.random): number {
+  const err = (e ?? {}) as { status?: unknown; retryAfterMs?: unknown };
+  const exp = Math.min(CITATION_RETRY.baseDelayMs * 2 ** (attempt - 1), 15_000);
+  if (err.status === 429) {
+    const retryAfter = Number(err.retryAfterMs) || 0;
+    return retryAfter > 0 ? retryAfter + rand() * 1000 : exp * (0.5 + rand());
+  }
+  return exp * (0.75 + rand() * 0.5);
+}
 
 /** The run's clock: how long a call may take so it still ends inside the run time budget. */
 function callTimeout(startedAt: number, baseMs: number): number {
@@ -515,9 +553,9 @@ async function callWithRetry<T>(limit: Limiter, startedAt: number, baseTimeoutMs
     try {
       return await limit(() => call(callTimeout(startedAt, baseTimeoutMs)));
     } catch (e) {
-      if (attempt >= attempts || !isRetryable(e)) throw e;
-      const retryAfter = Number((e as { retryAfterMs?: unknown }).retryAfterMs) || 0;
-      const delay = Math.max(retryAfter, Math.min(CITATION_RETRY.baseDelayMs * 2 ** (attempt - 1), 15_000)) * (0.75 + Math.random() * 0.5);
+      const rateLimited = (e as { status?: unknown }).status === 429;
+      if (attempt >= Math.max(attempts, rateLimited ? CITATION_RETRY.rateLimitAttempts : 0) || !isRetryable(e)) throw e;
+      const delay = retryDelayMs(attempt, e);
       if (Date.now() + delay - startedAt > CITATION_RETRY.retryUntilMs) throw e;
       await sleep(delay);
     }
@@ -729,7 +767,7 @@ async function collectCitations(domain: string, queries: string[], samples: numb
   // or backing-off engine no longer holds up the others question by question (12/10/2026).
   const startedAt = Date.now();
   const limit = {
-    pplx: makeLimiter(PROVIDER_CONCURRENCY.pplx), gpt: makeLimiter(PROVIDER_CONCURRENCY.gpt), gemini: makeLimiter(PROVIDER_CONCURRENCY.gemini),
+    pplx: makeLimiter(PROVIDER_CONCURRENCY.pplx, CITATION_RETRY.pplxStartGapMs), gpt: makeLimiter(PROVIDER_CONCURRENCY.gpt), gemini: makeLimiter(PROVIDER_CONCURRENCY.gemini),
     claude: makeLimiter(PROVIDER_CONCURRENCY.claude), dataforseo: makeLimiter(PROVIDER_CONCURRENCY.dataforseo),
   };
   /** One LLM sample: an empty answer is retried like any other transient failure. */
