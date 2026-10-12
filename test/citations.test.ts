@@ -24,6 +24,12 @@ const state = {
   /** Queries whose SERP carries an AI answer. Others load with no AI answer. */
   shown: { aio: new Set<string>(), aimode: new Set<string>() },
   calls: { pplx: 0, gpt: 0, gemini: 0, claude: 0, aio: 0, aimode: 0 } as Record<Engine, number>,
+  /** SERP calls that come back as a DataForSEO task error (e.g. 40101) before succeeding. */
+  serpTaskFail: {} as Partial<Record<"aio" | "aimode", { count: number; code: number }>>,
+  /** Simulated provider latency, and the most calls seen in flight at once per engine. */
+  delayMs: 0,
+  inFlight: { pplx: 0, gpt: 0, gemini: 0, claude: 0, aio: 0, aimode: 0 } as Record<Engine, number>,
+  maxInFlight: { pplx: 0, gpt: 0, gemini: 0, claude: 0, aio: 0, aimode: 0 } as Record<Engine, number>,
   models: { pplx: [] as string[], gpt: [] as string[], gemini: [] as string[], claude: [] as string[] },
   answerText: "Some options include Acme and Other Co.",
 };
@@ -33,9 +39,26 @@ function reset() {
   state.serpFail = {};
   state.shown = { aio: new Set(), aimode: new Set() };
   state.calls = { pplx: 0, gpt: 0, gemini: 0, claude: 0, aio: 0, aimode: 0 };
+  state.serpTaskFail = {};
+  state.delayMs = 0;
+  state.inFlight = { pplx: 0, gpt: 0, gemini: 0, claude: 0, aio: 0, aimode: 0 };
+  state.maxInFlight = { pplx: 0, gpt: 0, gemini: 0, claude: 0, aio: 0, aimode: 0 };
   state.models = { pplx: [], gpt: [], gemini: [], claude: [] };
   state.answerText = "Some options include Acme and Other Co.";
   Object.assign(process.env, FAKE_ENV);
+  // Sections 1-5 test how failures that survive every retry are counted, so they run with one attempt.
+  // Section 6 turns retries back on.
+  if (tools) Object.assign(tools.CITATION_RETRY, { attempts: 1, serpAttempts: 1, rateLimitAttempts: 1, baseDelayMs: 1, pplxStartGapMs: 0, retryUntilMs: 150_000, hardStopMs: 210_000 });
+}
+
+/** Wraps a mocked provider call so the test can see how many were in flight at once. */
+async function inFlight<T>(engine: Engine, fn: () => T | Promise<T>): Promise<T> {
+  state.inFlight[engine]++;
+  state.maxInFlight[engine] = Math.max(state.maxInFlight[engine], state.inFlight[engine]);
+  try {
+    if (state.delayMs) await new Promise((r) => setTimeout(r, state.delayMs));
+    return await fn();
+  } finally { state.inFlight[engine]--; }
 }
 
 /** Returns the failure for this call, if this call is one of the first `count` calls to the engine. */
@@ -60,9 +83,11 @@ const mockFetch = async (input: string | URL | Request, init?: RequestInit): Pro
 
   if (url === "https://api.perplexity.ai/chat/completions") {
     state.models.pplx.push(body.model);
-    const f = nextFailure("pplx");
-    if (f) return failResponse(f, { choices: [{ message: { content: "" } }], citations: [] });
-    return json({ choices: [{ message: { content: state.answerText } }], citations: ["https://acme.com/best"], usage: {} });
+    return inFlight("pplx", () => {
+      const f = nextFailure("pplx");
+      if (f) return failResponse(f, { choices: [{ message: { content: "" } }], citations: [] });
+      return json({ choices: [{ message: { content: state.answerText } }], citations: ["https://acme.com/best"], usage: {} });
+    });
   }
   if (url === "https://api.openai.com/v1/responses") {
     state.models.gpt.push(body.model);
@@ -79,9 +104,11 @@ const mockFetch = async (input: string | URL | Request, init?: RequestInit): Pro
   const serp = url === "https://api.dataforseo.com/v3/serp/google/organic/live/advanced" ? "aio"
     : url === "https://api.dataforseo.com/v3/serp/google/ai_mode/live/advanced" ? "aimode" : null;
   if (serp) {
-    state.calls[serp]++;
+    const n = ++state.calls[serp];
     const keyword: string = body[0].keyword;
     if (state.serpFail[serp]?.has(keyword)) return json({ error: "server" }, 500);
+    const taskFail = state.serpTaskFail[serp];
+    if (taskFail && n <= taskFail.count) return json({ status_code: 20000, tasks: [{ status_code: taskFail.code, status_message: "Internal SE Server Error.", cost: 0.002, result: null }] });
     const items = state.shown[serp].has(keyword)
       ? [{ type: serp === "aio" ? "ai_overview" : "ai_mode", markdown: "Pemba tracks AI citations [pemba](https://pemba.ai/).", references: [{ url: "https://pemba.ai/" }] }]
       : [{ type: "organic", url: "https://acme.com/" }];
@@ -318,5 +345,181 @@ describe("/api/citations response", () => {
     expect(b.invalidReasons).toEqual([]);
     expect(b.method).toEqual({ version: "v3", samples: 3, models: tools.CITATION_MODELS });
     if (process.env.PRINT_EXAMPLE) console.log(JSON.stringify({ ...b, engines: { claude: b.engines.claude, google_ai: b.engines.google_ai } }, null, 2));
+  });
+});
+
+describe("6. Retries, per-provider limits and the run time budget (12/10/2026)", () => {
+  // The 11-12/10/2026 weekly readings lost Perplexity samples to 429s and AI Overview fetches to
+  // DataForSEO 40101 and 20 s timeouts, none of them retried. These tests pin the fix.
+  beforeEach(() => { Object.assign(tools.CITATION_RETRY, { attempts: 3, serpAttempts: 6, rateLimitAttempts: 6, baseDelayMs: 1 }); });
+
+  test("transient Perplexity 429s are retried and every sample comes back", async () => {
+    state.fail = { pplx: { count: 4, kind: "429" } };
+    const r = await tools.checkCitationsRaw("pemba.ai", Q6, 3);
+    expect(r.perplexity).toMatchObject({ expectedSamples: 18, gotSamples: 18, errors: [] });
+    expect(state.calls.pplx).toBe(18 + 4);
+    expect(r.valid).toBe(true);
+  });
+
+  test("DataForSEO 40101 on the AI Overview fetch is retried; the reading stays complete", async () => {
+    state.shown.aio = new Set(Q6);
+    state.serpTaskFail.aio = { count: 3, code: 40101 };
+    const r = await tools.checkCitationsRaw("pemba.ai", Q6, 1);
+    expect(r.googleAIO).toMatchObject({ expectedSamples: 6, gotSamples: 6, aiAnswerShown: 6, errors: [] });
+    expect(state.calls.aio).toBe(6 + 3);
+  });
+
+  test("timeouts and empty answers are retried", async () => {
+    state.fail = { gemini: { count: 2, kind: "timeout" }, gpt: { count: 2, kind: "empty" } };
+    const r = await tools.checkCitationsRaw("pemba.ai", Q2, 3);
+    expect(r.gemini).toMatchObject({ gotSamples: 6, errors: [] });
+    expect(r.chatgpt).toMatchObject({ gotSamples: 6, errors: [] });
+  });
+
+  test("a SERP fetch is tried up to 6 times; one that keeps failing is listed once", async () => {
+    state.serpTaskFail.aio = { count: 6, code: 40101 };
+    const r = await tools.checkCitationsRaw("pemba.ai", ["q1"], 1);
+    expect(state.calls.aio).toBe(6);
+    expect(r.googleAIO).toMatchObject({ expectedSamples: 1, gotSamples: 0, errors: [{ query: "q1", reason: "dataforseo status 40101" }] });
+    state.serpTaskFail.aio = { count: 5 + 6, code: 40101 }; // 5 more failures, then success on the 6th try
+    const r2 = await tools.checkCitationsRaw("pemba.ai", ["q1"], 1);
+    expect(r2.googleAIO).toMatchObject({ gotSamples: 1, errors: [] });
+  });
+
+  test("a call that keeps failing stops after 3 tries and is listed once in errors", async () => {
+    state.fail = { pplx: { count: 3, kind: "500" } };
+    const r = await tools.checkCitationsRaw("pemba.ai", ["q1"], 1);
+    expect(state.calls.pplx).toBe(3);
+    expect(r.perplexity).toMatchObject({ expectedSamples: 1, gotSamples: 0, errors: [{ query: "q1", reason: "http 500" }] });
+  });
+
+  test("a DataForSEO code that is not transient is not retried", async () => {
+    state.serpTaskFail.aio = { count: 1, code: 40501 };
+    const r = await tools.checkCitationsRaw("pemba.ai", ["q1"], 1);
+    expect(state.calls.aio).toBe(1);
+    expect(r.googleAIO.errors).toEqual([{ query: "q1", reason: "dataforseo status 40501" }]);
+  });
+
+  test("isRetryable: transient yes, auth and bad requests no", () => {
+    const http = (status: number) => Object.assign(new Error(`http ${status}`), { status });
+    const dfs = (dfsCode: number) => Object.assign(new Error(`dataforseo status ${dfsCode}`), { dfsCode });
+    for (const e of [http(429), http(500), http(503), dfs(40101), dfs(50401), new DOMException("x", "TimeoutError"), new Error("empty"), new TypeError("fetch failed")]) expect(tools.isRetryable(e)).toBe(true);
+    for (const e of [http(400), http(401), http(403), dfs(40501), dfs(40200), new Error("run time budget used"), new Error("api error invalid_request")]) expect(tools.isRetryable(e)).toBe(false);
+  });
+
+  test("Perplexity never has more than 2 calls in flight; the other engines no more than their caps", async () => {
+    state.delayMs = 5;
+    await tools.checkCitationsRaw("pemba.ai", Q6, 3);
+    expect(state.calls.pplx).toBe(18);
+    expect(state.maxInFlight.pplx).toBeLessThanOrEqual(2);
+    expect(state.maxInFlight.pplx).toBeGreaterThan(1); // still parallel
+  });
+
+  test("once the run time budget is used, no new call starts and the reason is reported", async () => {
+    Object.assign(tools.CITATION_RETRY, { hardStopMs: 0 });
+    const r = await tools.checkCitationsRaw("pemba.ai", ["q1"], 1);
+    expect(state.calls.pplx + state.calls.gpt + state.calls.gemini + state.calls.aio + state.calls.aimode).toBe(0);
+    expect(r.perplexity.errors).toEqual([{ query: "q1", reason: "run time budget used" }]);
+    expect(r.valid).toBe(false);
+  });
+
+  test("makeLimiter runs at most max at once and runs everything", async () => {
+    const limit = tools.makeLimiter(2);
+    let active = 0, peak = 0;
+    const done = await Promise.all(Array.from({ length: 7 }, (_, i) => limit(async () => {
+      active++; peak = Math.max(peak, active);
+      await new Promise((r) => setTimeout(r, 2));
+      active--;
+      return i;
+    })));
+    expect(done).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(peak).toBe(2);
+  });
+
+  describe("429 rate limits (12/10/2026 retakes: Perplexity still 429 with a cap of 3)", () => {
+    const r429 = (retryAfterMs = 0) => Object.assign(new Error("rate limit"), { status: 429, retryAfterMs });
+
+    test("a 429 gets up to 6 tries, more than the 3 for other failures", async () => {
+      state.fail = { pplx: { count: 5, kind: "429" } };
+      const r = await tools.checkCitationsRaw("pemba.ai", ["q1"], 1);
+      expect(state.calls.pplx).toBe(6);
+      expect(r.perplexity).toMatchObject({ gotSamples: 1, errors: [] });
+      reset(); Object.assign(tools.CITATION_RETRY, { attempts: 3, serpAttempts: 6, rateLimitAttempts: 6, baseDelayMs: 1 });
+      state.fail = { pplx: { count: 6, kind: "429" } };
+      const r2 = await tools.checkCitationsRaw("pemba.ai", ["q1"], 1);
+      expect(state.calls.pplx).toBe(6);
+      expect(r2.perplexity).toMatchObject({ gotSamples: 0, errors: [{ query: "q1", reason: "rate limit" }] });
+    });
+
+    test("Pemba's real failure: 8 of 15 Perplexity calls rate limited in a chunk, all recovered", async () => {
+      state.fail = { pplx: { count: 8, kind: "429" } };
+      const r = await tools.checkCitationsRaw("medicinetraditions.com", Q6.slice(0, 5), 3);
+      expect(r.perplexity).toMatchObject({ expectedSamples: 15, gotSamples: 15, errors: [] });
+      expect(r.valid).toBe(true);
+    });
+
+    test("Retry-After is honoured, with under 1 s of jitter on top", () => {
+      Object.assign(tools.CITATION_RETRY, { baseDelayMs: 2000 });
+      expect(tools.retryDelayMs(1, r429(5000), () => 0)).toBe(5000);
+      expect(tools.retryDelayMs(4, r429(5000), () => 0.999)).toBeCloseTo(5999, 0);
+    });
+
+    test("without Retry-After a 429 backs off exponentially with 50-150% jitter, capped at 15 s", () => {
+      Object.assign(tools.CITATION_RETRY, { baseDelayMs: 2000 });
+      const lo = (n: number) => tools.retryDelayMs(n, r429(), () => 0);
+      const hi = (n: number) => tools.retryDelayMs(n, r429(), () => 1);
+      expect([1, 2, 3, 4, 5].map(lo)).toEqual([1000, 2000, 4000, 7500, 7500]);
+      expect([1, 2, 3, 4, 5].map(hi)).toEqual([3000, 6000, 12000, 22500, 22500]);
+      // Worst case for a call that 429s five times: under the 150 s retry window.
+      expect([1, 2, 3, 4, 5].map(hi).reduce((a, b) => a + b, 0)).toBeLessThan(150_000);
+      // Other failures keep the narrower ±25% jitter.
+      expect(tools.retryDelayMs(1, Object.assign(new Error("http 500"), { status: 500 }), () => 0)).toBe(1500);
+    });
+
+    test("a Retry-After header on a real 429 response reaches the backoff", async () => {
+      Object.assign(tools.CITATION_RETRY, { baseDelayMs: 1, rateLimitAttempts: 2 });
+      const realFetch = globalThis.fetch;
+      let n = 0; const starts: number[] = [];
+      globalThis.fetch = (async (input: any, init?: any) => {
+        if (String(input) !== "https://api.perplexity.ai/chat/completions") return realFetch(input, init);
+        starts.push(Date.now());
+        if (++n === 1) return new Response("{}", { status: 429, headers: { "retry-after": "1" } });
+        return new Response(JSON.stringify({ choices: [{ message: { content: "Acme" } }], citations: [], usage: {} }), { status: 200 });
+      }) as typeof fetch;
+      try {
+        const r = await tools.checkCitationsRaw("pemba.ai", ["q1"], 1);
+        expect(r.perplexity.gotSamples).toBe(1);
+        expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(990);
+      } finally { globalThis.fetch = realFetch; }
+    });
+
+    test("a retry stops once the 150 s retry window would be passed, so the run still ends in time", async () => {
+      Object.assign(tools.CITATION_RETRY, { retryUntilMs: 0 });
+      state.fail = { pplx: { count: 1, kind: "429" } };
+      const r = await tools.checkCitationsRaw("pemba.ai", ["q1"], 1);
+      expect(state.calls.pplx).toBe(1);
+      expect(r.perplexity.errors).toEqual([{ query: "q1", reason: "rate limit" }]);
+    });
+
+    test("Perplexity calls start at least pplxStartGapMs apart within a check", async () => {
+      Object.assign(tools.CITATION_RETRY, { pplxStartGapMs: 30 });
+      const realFetch = globalThis.fetch;
+      const starts: number[] = [];
+      globalThis.fetch = (async (input: any, init?: any) => {
+        if (String(input) === "https://api.perplexity.ai/chat/completions") starts.push(Date.now());
+        return realFetch(input, init);
+      }) as typeof fetch;
+      try { await tools.checkCitationsRaw("pemba.ai", Q2, 3); } finally { globalThis.fetch = realFetch; }
+      expect(starts.length).toBe(6);
+      for (let i = 1; i < starts.length; i++) expect(starts[i] - starts[i - 1]).toBeGreaterThanOrEqual(28);
+    });
+
+    test("the production settings fit Perplexity Tier 1 (3 per rolling second, 150 a minute) for 2 parallel chunks", () => {
+      const prodGap = 1000; // CITATION_RETRY.pplxStartGapMs in production
+      expect(tools.PROVIDER_CONCURRENCY.pplx).toBe(2);
+      const chunks = 2;
+      expect(chunks * Math.ceil(1000 / prodGap)).toBeLessThanOrEqual(2); // per second, 1 left for Sailor
+      expect(chunks * (60_000 / prodGap)).toBeLessThanOrEqual(150);
+    });
   });
 });
