@@ -48,7 +48,7 @@ function reset() {
   Object.assign(process.env, FAKE_ENV);
   // Sections 1-5 test how failures that survive every retry are counted, so they run with one attempt.
   // Section 6 turns retries back on.
-  if (tools) Object.assign(tools.CITATION_RETRY, { attempts: 1, serpAttempts: 1, baseDelayMs: 1, retryUntilMs: 150_000, hardStopMs: 210_000 });
+  if (tools) Object.assign(tools.CITATION_RETRY, { attempts: 1, serpAttempts: 1, rateLimitAttempts: 1, baseDelayMs: 1, pplxStartGapMs: 0, retryUntilMs: 150_000, hardStopMs: 210_000 });
 }
 
 /** Wraps a mocked provider call so the test can see how many were in flight at once. */
@@ -351,7 +351,7 @@ describe("/api/citations response", () => {
 describe("6. Retries, per-provider limits and the run time budget (12/10/2026)", () => {
   // The 11-12/10/2026 weekly readings lost Perplexity samples to 429s and AI Overview fetches to
   // DataForSEO 40101 and 20 s timeouts, none of them retried. These tests pin the fix.
-  beforeEach(() => { Object.assign(tools.CITATION_RETRY, { attempts: 3, serpAttempts: 6, baseDelayMs: 1 }); });
+  beforeEach(() => { Object.assign(tools.CITATION_RETRY, { attempts: 3, serpAttempts: 6, rateLimitAttempts: 6, baseDelayMs: 1 }); });
 
   test("transient Perplexity 429s are retried and every sample comes back", async () => {
     state.fail = { pplx: { count: 4, kind: "429" } };
@@ -407,11 +407,11 @@ describe("6. Retries, per-provider limits and the run time budget (12/10/2026)",
     for (const e of [http(400), http(401), http(403), dfs(40501), dfs(40200), new Error("run time budget used"), new Error("api error invalid_request")]) expect(tools.isRetryable(e)).toBe(false);
   });
 
-  test("Perplexity never has more than 3 calls in flight; the other engines no more than their caps", async () => {
+  test("Perplexity never has more than 2 calls in flight; the other engines no more than their caps", async () => {
     state.delayMs = 5;
     await tools.checkCitationsRaw("pemba.ai", Q6, 3);
     expect(state.calls.pplx).toBe(18);
-    expect(state.maxInFlight.pplx).toBeLessThanOrEqual(3);
+    expect(state.maxInFlight.pplx).toBeLessThanOrEqual(2);
     expect(state.maxInFlight.pplx).toBeGreaterThan(1); // still parallel
   });
 
@@ -434,5 +434,92 @@ describe("6. Retries, per-provider limits and the run time budget (12/10/2026)",
     })));
     expect(done).toEqual([0, 1, 2, 3, 4, 5, 6]);
     expect(peak).toBe(2);
+  });
+
+  describe("429 rate limits (12/10/2026 retakes: Perplexity still 429 with a cap of 3)", () => {
+    const r429 = (retryAfterMs = 0) => Object.assign(new Error("rate limit"), { status: 429, retryAfterMs });
+
+    test("a 429 gets up to 6 tries, more than the 3 for other failures", async () => {
+      state.fail = { pplx: { count: 5, kind: "429" } };
+      const r = await tools.checkCitationsRaw("pemba.ai", ["q1"], 1);
+      expect(state.calls.pplx).toBe(6);
+      expect(r.perplexity).toMatchObject({ gotSamples: 1, errors: [] });
+      reset(); Object.assign(tools.CITATION_RETRY, { attempts: 3, serpAttempts: 6, rateLimitAttempts: 6, baseDelayMs: 1 });
+      state.fail = { pplx: { count: 6, kind: "429" } };
+      const r2 = await tools.checkCitationsRaw("pemba.ai", ["q1"], 1);
+      expect(state.calls.pplx).toBe(6);
+      expect(r2.perplexity).toMatchObject({ gotSamples: 0, errors: [{ query: "q1", reason: "rate limit" }] });
+    });
+
+    test("Pemba's real failure: 8 of 15 Perplexity calls rate limited in a chunk, all recovered", async () => {
+      state.fail = { pplx: { count: 8, kind: "429" } };
+      const r = await tools.checkCitationsRaw("example-clinic.com", Q6.slice(0, 5), 3);
+      expect(r.perplexity).toMatchObject({ expectedSamples: 15, gotSamples: 15, errors: [] });
+      expect(r.valid).toBe(true);
+    });
+
+    test("Retry-After is honoured, with under 1 s of jitter on top", () => {
+      Object.assign(tools.CITATION_RETRY, { baseDelayMs: 2000 });
+      expect(tools.retryDelayMs(1, r429(5000), () => 0)).toBe(5000);
+      expect(tools.retryDelayMs(4, r429(5000), () => 0.999)).toBeCloseTo(5999, 0);
+    });
+
+    test("without Retry-After a 429 backs off exponentially with 50-150% jitter, capped at 15 s", () => {
+      Object.assign(tools.CITATION_RETRY, { baseDelayMs: 2000 });
+      const lo = (n: number) => tools.retryDelayMs(n, r429(), () => 0);
+      const hi = (n: number) => tools.retryDelayMs(n, r429(), () => 1);
+      expect([1, 2, 3, 4, 5].map(lo)).toEqual([1000, 2000, 4000, 7500, 7500]);
+      expect([1, 2, 3, 4, 5].map(hi)).toEqual([3000, 6000, 12000, 22500, 22500]);
+      // Worst case for a call that 429s five times: under the 150 s retry window.
+      expect([1, 2, 3, 4, 5].map(hi).reduce((a, b) => a + b, 0)).toBeLessThan(150_000);
+      // Other failures keep the narrower ±25% jitter.
+      expect(tools.retryDelayMs(1, Object.assign(new Error("http 500"), { status: 500 }), () => 0)).toBe(1500);
+    });
+
+    test("a Retry-After header on a real 429 response reaches the backoff", async () => {
+      Object.assign(tools.CITATION_RETRY, { baseDelayMs: 1, rateLimitAttempts: 2 });
+      const realFetch = globalThis.fetch;
+      let n = 0; const starts: number[] = [];
+      globalThis.fetch = (async (input: any, init?: any) => {
+        if (String(input) !== "https://api.perplexity.ai/chat/completions") return realFetch(input, init);
+        starts.push(Date.now());
+        if (++n === 1) return new Response("{}", { status: 429, headers: { "retry-after": "1" } });
+        return new Response(JSON.stringify({ choices: [{ message: { content: "Acme" } }], citations: [], usage: {} }), { status: 200 });
+      }) as typeof fetch;
+      try {
+        const r = await tools.checkCitationsRaw("pemba.ai", ["q1"], 1);
+        expect(r.perplexity.gotSamples).toBe(1);
+        expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(990);
+      } finally { globalThis.fetch = realFetch; }
+    });
+
+    test("a retry stops once the 150 s retry window would be passed, so the run still ends in time", async () => {
+      Object.assign(tools.CITATION_RETRY, { retryUntilMs: 0 });
+      state.fail = { pplx: { count: 1, kind: "429" } };
+      const r = await tools.checkCitationsRaw("pemba.ai", ["q1"], 1);
+      expect(state.calls.pplx).toBe(1);
+      expect(r.perplexity.errors).toEqual([{ query: "q1", reason: "rate limit" }]);
+    });
+
+    test("Perplexity calls start at least pplxStartGapMs apart within a check", async () => {
+      Object.assign(tools.CITATION_RETRY, { pplxStartGapMs: 30 });
+      const realFetch = globalThis.fetch;
+      const starts: number[] = [];
+      globalThis.fetch = (async (input: any, init?: any) => {
+        if (String(input) === "https://api.perplexity.ai/chat/completions") starts.push(Date.now());
+        return realFetch(input, init);
+      }) as typeof fetch;
+      try { await tools.checkCitationsRaw("pemba.ai", Q2, 3); } finally { globalThis.fetch = realFetch; }
+      expect(starts.length).toBe(6);
+      for (let i = 1; i < starts.length; i++) expect(starts[i] - starts[i - 1]).toBeGreaterThanOrEqual(28);
+    });
+
+    test("the production settings fit Perplexity Tier 1 (3 per rolling second, 150 a minute) for 2 parallel chunks", () => {
+      const prodGap = 1000; // CITATION_RETRY.pplxStartGapMs in production
+      expect(tools.PROVIDER_CONCURRENCY.pplx).toBe(2);
+      const chunks = 2;
+      expect(chunks * Math.ceil(1000 / prodGap)).toBeLessThanOrEqual(2); // per second, 1 left for Sailor
+      expect(chunks * (60_000 / prodGap)).toBeLessThanOrEqual(150);
+    });
   });
 });
