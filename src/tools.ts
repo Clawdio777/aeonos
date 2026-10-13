@@ -414,7 +414,22 @@ export type CitationOptions = {
   locationCode?: number;
   /** Return every sampled answer's full text so it can be read later. */
   includeAnswers?: boolean;
+  /**
+   * Only these engines are sampled (13/10/2026); the others are reported as unavailable "not requested" and
+   * never counted as 0%. Lets a caller redo just the engines that failed instead of buying all six again.
+   * Default: every engine with a key.
+   */
+  engines?: EngineKey[];
 };
+
+/** Most questions one /api/citations call takes. More must go in another call: nothing is dropped silently (13/10/2026). */
+export const MAX_CITATION_QUESTIONS = 6;
+
+/** Public engine names on /api/citations and their sampler keys. */
+export const CITATION_ENGINE_NAMES = {
+  chatgpt: "gpt", gemini: "gemini", google_ai: "aio", google_ai_mode: "aimode", perplexity: "pplx", claude: "claude",
+} as const satisfies Record<string, EngineKey>;
+export type CitationEngineName = keyof typeof CITATION_ENGINE_NAMES;
 
 // Perplexity/ChatGPT answers are non-deterministic, so one sample per query is noise.
 // LLM engines get CITATION_SAMPLES per query; Google AIO + Bing are SERP snapshots and run once.
@@ -748,16 +763,19 @@ type Collected = Record<EngineKey, LlmRow[]> & {
 async function collectCitations(domain: string, queries: string[], samples: number, opts: CitationOptions = {}): Promise<Collected> {
   const brand = brandRegex(opts.brandName);
   const loc = opts.locationCode;
-  const pplxKey = process.env.PPLX_API_KEY;
-  const openaiKey = process.env.OPENAI_API_KEY;
-  const geminiKey = process.env.GEMINI_API_KEY;
-  const claudeKey = process.env.ANTHROPIC_API_KEY;
   const hasDFS = !!(process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD);
-  const ordered = queries.slice(0, 6);
+  const ordered = queries.slice(0, MAX_CITATION_QUESTIONS);
+  // Engines the caller asked for (default all). An engine that is not wanted is not attempted, not charged and
+  // reported as unavailable "not requested", so the caller's reading treats it as not sampled.
+  const want = (k: EngineKey) => !opts.engines || opts.engines.includes(k);
+  const pplxKey = want("pplx") ? process.env.PPLX_API_KEY : undefined;
+  const openaiKey = want("gpt") ? process.env.OPENAI_API_KEY : undefined;
+  const geminiKey = want("gemini") ? process.env.GEMINI_API_KEY : undefined;
+  const claudeKey = want("claude") ? process.env.ANTHROPIC_API_KEY : undefined;
   const out: Collected = {
     pplx: [], gpt: [], gemini: [], claude: [], aio: [], aimode: [], unavailable: {},
     errors: { pplx: [], gpt: [], gemini: [], claude: [], aio: [], aimode: [] },
-    attempted: { pplx: !!pplxKey, gpt: !!openaiKey, gemini: !!geminiKey, claude: !!claudeKey, aio: hasDFS, aimode: hasDFS },
+    attempted: { pplx: !!pplxKey, gpt: !!openaiKey, gemini: !!geminiKey, claude: !!claudeKey, aio: hasDFS && want("aio"), aimode: hasDFS && want("aimode") },
     queryCount: ordered.length,
     samples,
   };
@@ -785,8 +803,8 @@ async function collectCitations(domain: string, queries: string[], samples: numb
       openaiKey ? (attempted.gpt++, sampleLlm(domain, q, samples, llmCall(limit.gpt, CALL_TIMEOUT_MS.gpt, (t) => queryGPTRaw(q, openaiKey, t)), brand)) : Promise.resolve(null),
       geminiKey ? (attempted.gemini++, sampleLlm(domain, q, samples, llmCall(limit.gemini, CALL_TIMEOUT_MS.gemini, (t) => queryGeminiRaw(q, geminiKey, t)), brand)) : Promise.resolve(null),
       claudeKey ? (attempted.claude++, sampleLlm(domain, q, samples, llmCall(limit.claude, CALL_TIMEOUT_MS.claude, (t) => queryClaudeRaw(q, t)), brand)) : Promise.resolve(null),
-      hasDFS ? (attempted.aio++, serpCall((t) => queryGoogleAIOverview(q, loc, t))) : Promise.resolve(null),
-      hasDFS ? (attempted.aimode++, serpCall((t) => queryGoogleAIMode(q, loc, t))) : Promise.resolve(null),
+      hasDFS && want("aio") ? (attempted.aio++, serpCall((t) => queryGoogleAIOverview(q, loc, t))) : Promise.resolve(null),
+      hasDFS && want("aimode") ? (attempted.aimode++, serpCall((t) => queryGoogleAIMode(q, loc, t))) : Promise.resolve(null),
     ]);
     const llm = (k: EngineKey, r: PromiseSettledResult<Sampled | null>) => {
       if (r.status === "rejected") { out.errors[k].push({ query: q, reason: failReason(r.reason) }); return; }
@@ -815,6 +833,9 @@ async function collectCitations(domain: string, queries: string[], samples: numb
   if (!claudeKey) out.unavailable.claude = "no ANTHROPIC_API_KEY";
   else if (attempted.claude && !out.claude.length) out.unavailable.claude = "API returned no data";
   if (!hasDFS) { out.unavailable.google_ai_overviews = "no DataForSEO credentials"; out.unavailable.google_ai_mode = "no DataForSEO credentials"; }
+  // Not asked for this call: says so, in place of any key or data reason
+  const publicName: Record<EngineKey, string> = { pplx: "perplexity", gpt: "chatgpt", gemini: "gemini", claude: "claude", aio: "google_ai_overviews", aimode: "google_ai_mode" };
+  for (const k of ENGINE_KEYS) if (!want(k)) out.unavailable[publicName[k]] = "not requested";
   return out;
 }
 

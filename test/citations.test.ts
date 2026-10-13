@@ -344,7 +344,52 @@ describe("/api/citations response", () => {
     expect(b.valid).toBe(true); // 5 of 6 = 83%
     expect(b.invalidReasons).toEqual([]);
     expect(b.method).toEqual({ version: "v3", samples: 3, models: tools.CITATION_MODELS });
+    expect(b.engines_requested).toEqual(["chatgpt", "gemini", "google_ai", "google_ai_mode", "perplexity", "claude"]);
     if (process.env.PRINT_EXAMPLE) console.log(JSON.stringify({ ...b, engines: { claude: b.engines.claude, google_ai: b.engines.google_ai } }, null, 2));
+  });
+
+  // 13/10/2026 (#24): a caller can redo just the engines that failed, and extra questions are refused, never dropped
+  test("engines: only the named engines are sampled; the rest are unavailable 'not requested' and do not affect validity", async () => {
+    const res = fakeRes();
+    await handler(
+      { method: "POST", headers: { authorization: `Bearer ${FAKE_ENV.PEMBA_API_KEY}` }, body: { domain: "pemba.ai", queries: ["q1", "q2"], samples: 2, engines: ["perplexity", "google_ai_mode", "perplexity"] } } as any,
+      res,
+    );
+    expect(res.statusCode).toBe(200);
+    const b = res.body;
+    expect(b.engines_requested).toEqual(["perplexity", "google_ai_mode"]);
+    expect(state.calls).toMatchObject({ pplx: 4, aimode: 2, gpt: 0, gemini: 0, claude: 0, aio: 0 });
+    expect(b.engines.perplexity).toMatchObject({ attempted: true, expectedSamples: 4, gotSamples: 4 });
+    expect(b.engines.chatgpt).toMatchObject({ attempted: false, gotSamples: 0 });
+    expect(b.unavailable).toMatchObject({ chatgpt: "not requested", gemini: "not requested", claude: "not requested", google_ai_overviews: "not requested" });
+    expect(b.unavailable.perplexity).toBeUndefined();
+    expect(b.valid).toBe(true);
+    expect(Object.keys(b.engines).sort()).toEqual(["chatgpt", "claude", "gemini", "google_ai", "google_ai_mode", "perplexity"]); // shape unchanged
+  });
+
+  test("engines: an unknown or empty list is a 400, and nothing is sampled", async () => {
+    for (const engines of [["bing"], [], "chatgpt", [42]]) {
+      const res = fakeRes();
+      await handler({ method: "POST", headers: { authorization: `Bearer ${FAKE_ENV.PEMBA_API_KEY}` }, body: { domain: "pemba.ai", queries: ["q1"], engines } } as any, res);
+      expect(res.statusCode).toBe(400);
+      expect(res.body.error).toContain("engines must be a non-empty list of");
+    }
+    expect(state.calls).toMatchObject({ pplx: 0, gpt: 0, gemini: 0, claude: 0, aio: 0, aimode: 0 });
+  });
+
+  test("more than 6 questions is a 400 that says how many to send, never a silent drop", async () => {
+    const res = fakeRes();
+    const seven = Array.from({ length: 7 }, (_, i) => `q${i + 1}`);
+    await handler({ method: "POST", headers: { authorization: `Bearer ${FAKE_ENV.PEMBA_API_KEY}` }, body: { domain: "pemba.ai", queries: seven } } as any, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: "at most 6 questions per call, got 7; send the rest in another call", max_queries: 6 });
+    expect(state.calls).toMatchObject({ pplx: 0, gpt: 0, gemini: 0, claude: 0, aio: 0, aimode: 0 });
+    // Exactly 6 still runs and echoes all 6
+    const ok = fakeRes();
+    await handler({ method: "POST", headers: { authorization: `Bearer ${FAKE_ENV.PEMBA_API_KEY}` }, body: { domain: "pemba.ai", queries: seven.slice(0, 6), samples: 1 } } as any, ok);
+    expect(ok.statusCode).toBe(200);
+    expect(ok.body.queries).toHaveLength(6);
+    expect(tools.MAX_CITATION_QUESTIONS).toBe(6);
   });
 });
 
