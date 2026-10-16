@@ -18,6 +18,7 @@ npx aeonos-mcp
 - JSON-LD schema: production-ready Schema.org markup
 - llms.txt: a deploy-ready file for AI crawlers
 - Progress report: Four Layers scorecard (SXO, AIO, GEO, AEO)
+- AI share of voice: compare 2-5 brands across ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude, with each brand's share of citations per engine
 - Agent query: citation tactics, quick wins, and keyword strategy
 - Persistent memory: site context kept across calls when a caller id is supplied
 
@@ -29,6 +30,7 @@ Pay per call in USDC on Base via x402, or with card credits. 1 credit = $0.01 US
 - aeonos_schema: 0.50 USDC, or 50 credits
 - aeonos_llms_txt: 0.50 USDC, or 50 credits
 - aeonos_progress: 1.50 USDC, or 75 credits
+- aeonos_share_of_voice: 1.50 USDC
 - aeonos_audit: 2.50 USDC, or 100 credits
 
 ## Pages
