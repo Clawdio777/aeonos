@@ -440,7 +440,7 @@ const _bazaarBase = declareDiscoveryExtension({
       artifact: {
         parts: [{
           type: "text",
-          text: "# AEO Audit: mysite.com\n\n**Overall Score: 62/100**\n\n## P1 — Do This Week\n1. Add FAQPage JSON-LD schema...",
+          text: "# AEO Audit: YOUR-SITE.com\n\n**Overall Score: 62/100**\n\n## P1: Do This Week\n1. Add FAQPage JSON-LD schema...",
         }],
         index: 0,
       },

@@ -14,13 +14,13 @@ import { runAgent } from "../src/agent.js";
 const PRICE_USDC    = 0.50;
 const BASE_URL      = () => process.env.AGENT_BASE_URL || "https://aeonos.basechainlabs.com";
 const RESOURCE_URL  = () => `${BASE_URL()}/api/llms-txt`;
-const RESOURCE_DESC = "Generate llms.txt to improve AI search visibility — structured file for ChatGPT, Perplexity & Claude crawlers. Helps AI engines understand and cite your business. 0.50 USDC.";
+const RESOURCE_DESC = "Generate llms.txt to improve AI search visibility: a structured file for ChatGPT, Perplexity and Claude crawlers. Helps AI engines understand and cite your business. 0.50 USDC.";
 
 const BAZAAR = buildBazaarExtension({
-  serviceName:      "AEONOS — llms.txt Generator",
+  serviceName:      "AEONOS: llms.txt Generator",
   queryDescription: "Your real business URL (replace YOUR-SITE.com) or description to generate llms.txt for. E.g. 'Write llms.txt for https://yourdomain.com'.",
   queryExample:     "Write a complete llms.txt file for https://YOUR-SITE.com, a B2B SaaS for beauty salon booking",
-  outputExample:    "# mysite.com\n\n> AI booking software for beauty salons\n\n## Product\n...\n\n## FAQ\n...",
+  outputExample:    "# YOUR-SITE.com\n\n> AI booking software for beauty salons\n\n## Product\n...\n\n## FAQ\n...",
 });
 
 const db = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!);

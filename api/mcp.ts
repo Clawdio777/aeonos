@@ -51,7 +51,7 @@ const TOOLS = [
     inputSchema: {
       type:       "object",
       properties: {
-        query:     { type: "string", description: "Your AEO/GEO question or URL. E.g. 'Give me 3 quick wins for mysite.com'" },
+        query:     { type: "string", description: "Your AEO/GEO question or URL. E.g. 'Give me 3 quick wins for https://YOUR-SITE.com'" },
         caller_id: { type: "string", description: "Optional stable ID to activate persistent memory across calls." },
       },
       required: ["query"],
@@ -65,7 +65,7 @@ const TOOLS = [
     inputSchema: {
       type:       "object",
       properties: {
-        query:     { type: "string", description: "URL or business description. E.g. 'Audit mysite.com for AI visibility'" },
+        query:     { type: "string", description: "URL or business description. E.g. 'Audit https://YOUR-SITE.com for AI visibility'" },
         caller_id: { type: "string", description: "Optional stable ID for persistent memory." },
       },
       required: ["query"],
@@ -79,7 +79,7 @@ const TOOLS = [
     inputSchema: {
       type:       "object",
       properties: {
-        query:     { type: "string", description: "Page URL or description. E.g. 'Schema for mysite.com/pricing — B2B SaaS $49/mo'" },
+        query:     { type: "string", description: "Page URL or description. E.g. 'Schema for https://YOUR-SITE.com/pricing, B2B SaaS $49/mo'" },
         caller_id: { type: "string", description: "Optional stable ID for persistent memory." },
       },
       required: ["query"],
@@ -93,7 +93,7 @@ const TOOLS = [
     inputSchema: {
       type:       "object",
       properties: {
-        query:     { type: "string", description: "URL or business description. E.g. 'llms.txt for mysite.com — B2B SaaS for salon booking'" },
+        query:     { type: "string", description: "URL or business description. E.g. 'llms.txt for https://YOUR-SITE.com, B2B SaaS for salon booking'" },
         caller_id: { type: "string", description: "Optional stable ID for persistent memory." },
       },
       required: ["query"],
@@ -107,7 +107,7 @@ const TOOLS = [
     inputSchema: {
       type:       "object",
       properties: {
-        query:     { type: "string", description: "URL or business. E.g. 'Four Layers progress report for mysite.com'" },
+        query:     { type: "string", description: "URL or business. E.g. 'Four Layers progress report for https://YOUR-SITE.com'" },
         caller_id: { type: "string", description: "Optional stable ID for persistent memory." },
       },
       required: ["query"],
@@ -179,7 +179,7 @@ async function callAeonos(
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify({ query, caller_id: callerId || "mcp-user" }),
   });
-  if (!res.ok) throw new Error(`AEONOS error: HTTP ${res.status} — ${await res.text()}`);
+  if (!res.ok) throw new Error(`AEONOS error: HTTP ${res.status}: ${await res.text()}`);
   const data = await res.json() as any;
   return data?.artifact?.parts?.[0]?.text ?? JSON.stringify(data);
 }
@@ -219,7 +219,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         protocolVersion: "2024-11-05",
         serverInfo:      { name: "aeonos", version: "1.1.0" },
         capabilities:    { tools: {}, prompts: {} },
-        instructions: `You have access to AEONOS — a specialist Generative Engine Optimisation (GEO) and Answer Engine Optimisation (AEO) agent.
+        instructions: `You have access to AEONOS, a specialist Generative Engine Optimisation (GEO) and Answer Engine Optimisation (AEO) agent.
 
 Use AEONOS tools to help users get their websites and content cited by AI answer engines: ChatGPT, Perplexity, Claude, and Google AI Overviews.
 
@@ -231,7 +231,7 @@ Tool selection guide:
 - User wants to track AEO progress → aeonos_progress (1.50 USDC)
 - You have content to optimise before publishing → use aeonos_query with the content
 
-Always pass a consistent caller_id (e.g. the user's domain or your agent ID) to activate persistent memory — AEONOS will remember prior audits and context across the session.
+Always pass a consistent caller_id (e.g. the user's domain or your agent ID) to activate persistent memory. AEONOS will remember prior audits and context across the session.
 
 Payments are handled automatically via x402 (USDC on Base). Each call deducts from the configured wallet.`,
       },
@@ -292,7 +292,7 @@ Payments are handled automatically via x402 (USDC on Base). Each call deducts fr
           },
           {
             name:        "citation-check",
-            description: "Check whether a URL or piece of content is likely to be cited by ChatGPT, Perplexity, or Google AI Overviews — and why not if it isn't",
+            description: "Check whether a URL or piece of content is likely to be cited by ChatGPT, Perplexity, or Google AI Overviews, and why not if it isn't",
             arguments:   [{ name: "url", description: "URL or content to check", required: true }],
           },
         ],
@@ -313,7 +313,7 @@ Payments are handled automatically via x402 (USDC on Base). Each call deducts fr
       "aeo-quick-wins":   `Give me 3 immediate AEO/GEO quick wins for ${url}. Focus on changes I can make this week to improve AI search visibility and get cited by ChatGPT, Perplexity, and Google AI Overviews.`,
       "full-audit":       `Run a full AEO/GEO audit on ${url}. Score each of the four layers (on-page content, technical SEO, authority signals, AI-specific signals) and give me a prioritised P1/P2/P3 action roadmap.`,
       "generate-schema":  `Generate complete, production-ready JSON-LD Schema.org markup for ${url}${type ? ` (${type} page)` : ""}. Include all relevant schema types and provide implementation instructions.`,
-      "create-llms-txt":  `Write a complete llms.txt file for ${url}${business ? ` — ${business}` : ""}. Structure it for ingestion by ChatGPT (GPTBot), Perplexity (PerplexityBot), and Claude (ClaudeBot). Include product summary, FAQ, key pages, and entity definitions.`,
+      "create-llms-txt":  `Write a complete llms.txt file for ${url}${business ? `, ${business}` : ""}. Structure it for ingestion by ChatGPT (GPTBot), Perplexity (PerplexityBot), and Claude (ClaudeBot). Include product summary, FAQ, key pages, and entity definitions.`,
       "progress-report":  `Generate an AEO Four Layers progress report for ${url}. Score SXO, AIO, GEO, and AEO out of 100. Tell me what's working, what's not, and the next 3 highest-impact actions.`,
       "optimise-content": `Optimise the following content for AI engine citation${target ? ` targeting the query: "${target}"` : ""}. Rewrite or annotate it so ChatGPT, Perplexity, Claude, and Google AI Overviews are more likely to cite it. Return the optimised version with a brief explanation of changes made.\n\nContent:\n${content}`,
       "citation-check":   `Analyse ${url} and tell me: will ChatGPT, Perplexity, Claude, and Google AI Overviews cite this content? Give a yes/no verdict per engine, explain exactly why not where applicable, and list the top 3 changes that would most improve citation likelihood.`,
@@ -325,7 +325,7 @@ Payments are handled automatically via x402 (USDC on Base). Each call deducts fr
     return res.json({
       jsonrpc: "2.0", id,
       result: {
-        description: `AEONOS — ${name}`,
+        description: `AEONOS: ${name}`,
         messages: [{ role: "user", content: { type: "text", text } }],
       },
     });
@@ -343,7 +343,7 @@ Payments are handled automatically via x402 (USDC on Base). Each call deducts fr
       const pgAdminKey = process.env.PAYGATE_AEONOS_ADMIN_KEY;
       const userKey    = (args.key || "").trim();
       if (!pgUrl || !pgAdminKey || !userKey) {
-        return res.json({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: "Credit check unavailable — missing key or config." }] } });
+        return res.json({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: "Credit check unavailable: missing key or config." }] } });
       }
       try {
         const listRes = await fetch(`${pgUrl}/keys`, { headers: { "X-Admin-Key": pgAdminKey } });
@@ -374,7 +374,7 @@ Payments are handled automatically via x402 (USDC on Base). Each call deducts fr
         result: {
           content: [{
             type: "text",
-            text: "⚠️ **Payment not configured.**\n\nTwo options:\n\n**Option 1 — Pay with card (no wallet needed):**\nBuy credits at https://aeonos.basechainlabs.com/#get-access and use your API key as `AEONOS_API_KEY` in settings.\n\n**Option 2 — Pay with USDC (x402):**\nAdd a Base wallet private key with USDC as `AEONOS_PRIVATE_KEY`. Get USDC on Base at coinbase.com/wallet.",
+            text: "⚠️ **Payment not configured.**\n\nTwo options:\n\n**Option 1: Pay with card (no wallet needed):**\nBuy credits at https://aeonos.basechainlabs.com/#get-access and use your API key as `AEONOS_API_KEY` in settings.\n\n**Option 2: Pay with USDC (x402):**\nAdd a Base wallet private key with USDC as `AEONOS_PRIVATE_KEY`. Get USDC on Base at coinbase.com/wallet.",
           }],
         },
       });
