@@ -62,6 +62,14 @@ Onboarding agent
 Base URL: `https://aeonos.basechainlabs.com`  
 Payment: x402 v2 · USDC on Base (eip155:8453) · No API key required
 
+**Category:** SEO and marketing analytics (AI search visibility). Not content or media generation.
+
+**What 0.05 USDC buys on `/api/agent`** (compared with a deterministic SEO or schema checker):
+- Live research: checks current AI search behaviour for your query, not a fixed rule list
+- A written, prioritised plan (P1/P2/P3) for your site, not a pass/fail score
+- Ready-to-ship drafts where relevant: JSON-LD schema, llms.txt, page copy fixes
+- Memory per `caller_id`: your site, keywords and past audits carry into the next call
+
 ---
 
 ## Request Format

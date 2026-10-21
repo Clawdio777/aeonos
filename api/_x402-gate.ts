@@ -112,7 +112,7 @@ export function buildBazaarExtension(opts: {
         input: { ...base.bazaar.info.input, method: "POST" },
       },
       serviceName: opts.serviceName,
-      tags: ["aeo", "geo", "seo", "ai-search", "llms"],
+      tags: ["seo", "marketing", "analytics", "aeo", "geo", "ai-search", "seo-audit", "schema-markup", "llms-txt"],
       iconUrl: "https://aeonos.basechainlabs.com/aeonos-logo.jpg",
     },
   };
