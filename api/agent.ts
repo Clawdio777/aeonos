@@ -478,7 +478,7 @@ const BAZAAR_EXTENSION = {
       },
     },
     serviceName: "AEONOS",
-    tags: ["aeo", "geo", "seo", "ai-search", "llms"],
+    tags: ["seo", "marketing", "analytics", "aeo", "geo", "ai-search", "seo-audit", "schema-markup", "llms-txt"],
     iconUrl: "https://aeonos.basechainlabs.com/aeonos-logo.jpg",
   },
 };
@@ -494,7 +494,7 @@ function send402(
     error:       errorReason ?? "payment-required",
     resource: {
       url:         `${base}/api/agent`,
-      description: "Improve AI search visibility and get cited by ChatGPT, Perplexity, Claude & Google AI Overviews. AEO/GEO/SEO strategy, AI visibility audits, schema markup, llms.txt. 0.05 USDC/query.",
+      description: "SEO and marketing analytics agent for AI search visibility (AEO/GEO/SEO). Not a deterministic checker: each 0.05 USDC call runs live research and returns a written, prioritised plan for your site, with schema and llms.txt drafts, and remembers your site across calls. Get cited by ChatGPT, Perplexity, Claude and Google AI Overviews.",
       mimeType:    "application/json",
     },
     accepts:    [paymentReqs],
