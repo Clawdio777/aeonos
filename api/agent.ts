@@ -22,7 +22,7 @@ import { x402Version as X402_VERSION } from "@x402/core";
 import { createFacilitatorConfig } from "@coinbase/x402";
 import { declareDiscoveryExtension } from "@x402/extensions";
 import { runAgent } from "../src/agent.js";
-import { withPlaceholderNotice, DISCOVERY_CALLER_ID_EXAMPLE } from "./_x402-gate.js";
+import { withPlaceholderNotice, DISCOVERY_CALLER_ID_EXAMPLE, withBuilderCode } from "./_x402-gate.js";
 import agentCard from "../public/.well-known/agent.json" with { type: "json" };
 
 // ── Coinbase CDP facilitator for Base mainnet ──────────────────────────────────
@@ -498,7 +498,7 @@ function send402(
       mimeType:    "application/json",
     },
     accepts:    [paymentReqs],
-    extensions: BAZAAR_EXTENSION,
+    extensions: withBuilderCode(BAZAAR_EXTENSION),
   };
   res.setHeader(
     "PAYMENT-REQUIRED",

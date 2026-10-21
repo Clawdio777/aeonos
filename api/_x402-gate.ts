@@ -9,6 +9,7 @@ import type { PaymentRequired, PaymentPayload, PaymentRequirements } from "@x402
 import { x402Version as X402_VERSION } from "@x402/core";
 import { createFacilitatorConfig } from "@coinbase/x402";
 import { declareDiscoveryExtension } from "@x402/extensions";
+import { declareBuilderCodeExtension, BUILDER_CODE_PATTERN } from "@x402/extensions/builder-code";
 
 // ── Shared facilitator client ──────────────────────────────────────────────────
 export const facilitatorClient = new HTTPFacilitatorClient(
@@ -118,6 +119,16 @@ export function buildBazaarExtension(opts: {
   };
 }
 
+// ── Base Builder Code (ERC-8021) ─────────────────────────────────────────────
+// Adds the "builder-code" declaration next to "bazaar" so the Coinbase facilitator writes
+// AEONOS's code into each settlement transaction (onchain attribution on Base). Off until
+// BUILDER_CODE is set; an invalid code is ignored rather than breaking the 402.
+export function withBuilderCode(extensions: Record<string, unknown>): Record<string, unknown> {
+  const code = (process.env.BUILDER_CODE || "").trim();
+  if (!code || !BUILDER_CODE_PATTERN.test(code)) return extensions;
+  return { ...extensions, "builder-code": declareBuilderCodeExtension(code) };
+}
+
 // ── send402 ───────────────────────────────────────────────────────────────────
 export function send402(
   res: VercelResponse,
@@ -132,7 +143,7 @@ export function send402(
     error:       errorReason ?? "payment-required",
     resource: { url: resourceUrl, description: resourceDesc, mimeType: "application/json" },
     accepts:    [paymentReqs],
-    extensions: bazaarExtension,
+    extensions: withBuilderCode(bazaarExtension),
   };
   res.setHeader("PAYMENT-REQUIRED", Buffer.from(JSON.stringify(body)).toString("base64"));
   return res.status(402).json(body);
