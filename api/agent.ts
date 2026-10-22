@@ -22,7 +22,7 @@ import { x402Version as X402_VERSION } from "@x402/core";
 import { createFacilitatorConfig } from "@coinbase/x402";
 import { declareDiscoveryExtension } from "@x402/extensions";
 import { runAgent } from "../src/agent.js";
-import { withPlaceholderNotice, DISCOVERY_CALLER_ID_EXAMPLE, withBuilderCode } from "./_x402-gate.js";
+import { withPlaceholderNotice, DISCOVERY_CALLER_ID_EXAMPLE, withBuilderCode, settlePayment, alertPaidFailure, NOT_CHARGED_MESSAGE, type PendingPayment } from "./_x402-gate.js";
 import agentCard from "../public/.well-known/agent.json" with { type: "json" };
 
 // ── Coinbase CDP facilitator for Base mainnet ──────────────────────────────────
@@ -139,41 +139,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return send402(res, paymentReqs, verifyResult.invalidReason);
   }
 
-  // Settle — locks in the payment on-chain
-  let settleResult: { success: boolean; errorReason?: string; transaction?: string; network?: string };
-  try {
-    settleResult = await facilitatorClient.settle(paymentPayload, paymentReqs);
-  } catch (e: any) {
-    console.error("[aeonos] x402 settle error:", e.message);
-    return res.status(500).json({ error: "Payment settlement failed", detail: e.message });
-  }
-  if (!settleResult.success) {
-    return send402(res, paymentReqs, settleResult.errorReason);
-  }
-
-  // Signal settlement to the client (v2 header: PAYMENT-RESPONSE)
-  res.setHeader(
-    "PAYMENT-RESPONSE",
-    Buffer.from(JSON.stringify(settleResult)).toString("base64")
-  );
+  // Verified, not settled: each pattern below settles only once it has a result to deliver
+  // (see _x402-gate.ts "Charge only after the work succeeds").
+  const payment: PendingPayment = { header: xPaymentHeader, payload: paymentPayload, reqs: paymentReqs };
 
   const queryCount = await getQueryCount(caller_id);
-
-  // paymentHeader used downstream for logging (paid vs free)
-  const paymentHeader = xPaymentHeader;
 
   // ── Route to correct pattern ─────────────────────────────────────────────────
   try {
     if (isStream) {
-      return await handleStream(req, res, query, caller_id, paymentHeader);
+      return await handleStream(req, res, query, caller_id, payment);
     }
     if (isAsync) {
-      return await handleAsync(req, res, query, caller_id, isJsonRpc, jsonRpcId, paymentHeader);
+      return await handleAsync(req, res, query, caller_id, isJsonRpc, jsonRpcId, payment);
     }
-    return await handleSync(req, res, query, caller_id, isJsonRpc, jsonRpcId, paymentHeader, queryCount);
+    return await handleSync(req, res, query, caller_id, isJsonRpc, jsonRpcId, payment, queryCount);
   } catch (e: any) {
-    console.error("[aeonos] Error:", e.message, e.stack);
-    return jsonRpcError(res, isJsonRpc, jsonRpcId, -32000, e.message);
+    // Not settled yet, so the buyer was not charged.
+    await alertPaidFailure("agent", caller_id, e);
+    return jsonRpcError(res, isJsonRpc, jsonRpcId, -32000, NOT_CHARGED_MESSAGE);
   }
 }
 
@@ -186,11 +170,16 @@ async function handleSync(
   caller_id: string,
   isJsonRpc: boolean,
   jsonRpcId: any,
-  paymentHeader: string | undefined,
+  payment: PendingPayment | undefined,
   queryCount: number
 ) {
   const result = await runAgent({ query, caller_id, citationSamples: 1 });
-  await logQuery(caller_id, query, result, paymentHeader);
+  if (payment) {
+    const settled = await settlePayment(payment);
+    if (!settled.ok) return send402(res, payment.reqs!, settled.reason);
+    if (settled.paymentResponse) res.setHeader("PAYMENT-RESPONSE", settled.paymentResponse);
+  }
+  await logQuery(caller_id, query, result, payment?.header);
 
   const body = {
     status: "completed",
@@ -219,7 +208,7 @@ async function handleAsync(
   caller_id: string,
   isJsonRpc: boolean,
   jsonRpcId: any,
-  paymentHeader: string | undefined
+  payment: PendingPayment | undefined
 ) {
   // Create task record immediately
   const { data: task, error } = await db
@@ -243,7 +232,20 @@ async function handleAsync(
   // Run agent in background (Vercel waits for the function to complete even after response)
   try {
     const result = await runAgent({ query, caller_id, citationSamples: 1 });
-    await logQuery(caller_id, query, result, paymentHeader);
+    let payment_response: string | undefined;
+    if (payment) {
+      const settled = await settlePayment(payment);
+      if (!settled.ok) {
+        await db.from("tasks").update({
+          status: "failed",
+          error: `Payment could not be completed (${settled.reason}), so the result was not released. Nothing was charged.`,
+          completed_at: new Date().toISOString(),
+        }).eq("id", task.id);
+        return;
+      }
+      payment_response = settled.paymentResponse;
+    }
+    await logQuery(caller_id, query, result, payment?.header);
     await db.from("tasks").update({
       status: "completed",
       result: {
@@ -253,13 +255,15 @@ async function handleAsync(
         },
         tool_calls: result.tool_calls_made,
         tokens: result.tokens_used,
+        ...(payment_response && { payment_response }),
       },
       completed_at: new Date().toISOString(),
     }).eq("id", task.id);
   } catch (e: any) {
+    if (payment) await alertPaidFailure("agent", caller_id, e);
     await db.from("tasks").update({
       status: "failed",
-      error: e.message,
+      error: payment ? NOT_CHARGED_MESSAGE : e.message,
       completed_at: new Date().toISOString(),
     }).eq("id", task.id);
   }
@@ -295,7 +299,7 @@ async function handleStream(
   res: VercelResponse,
   query: string,
   caller_id: string,
-  paymentHeader: string | undefined
+  payment: PendingPayment | undefined
 ) {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -315,7 +319,17 @@ async function handleStream(
     send({ status: "working", progress: "Querying live AEO data sources..." });
 
     const result = await runAgent({ query, caller_id, citationSamples: 1 });
-    await logQuery(caller_id, query, result, paymentHeader);
+    // Headers are already sent on a stream, so the settlement receipt goes in the final event.
+    let payment_response: string | undefined;
+    if (payment) {
+      const settled = await settlePayment(payment);
+      if (!settled.ok) {
+        send({ status: "failed", charged: false, error: `Payment could not be completed (${settled.reason}). Nothing was charged.` });
+        return res.end();
+      }
+      payment_response = settled.paymentResponse;
+    }
+    await logQuery(caller_id, query, result, payment?.header);
 
     for (const tool of result.tool_calls_made) {
       send({ status: "working", progress: `Completed: ${tool}` });
@@ -330,10 +344,12 @@ async function handleStream(
       },
       tool_calls: result.tool_calls_made,
       tokens: result.tokens_used,
+      ...(payment_response && { payment_response }),
     });
 
   } catch (e: any) {
-    send({ status: "failed", error: e.message });
+    if (payment) await alertPaidFailure("agent", caller_id, e);
+    send({ status: "failed", ...(payment && { charged: false }), error: payment ? NOT_CHARGED_MESSAGE : e.message });
   }
 
   res.end();
@@ -402,7 +418,7 @@ function buildPaymentRequirements(_req: VercelRequest): PaymentRequirements {
     network:           "eip155:8453",   // CAIP-2 required for x402 v2
     amount:            "50000",          // 0.05 USDC — 6 decimals
     payTo:             (process.env.PAYMENT_ADDRESS || "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc").trim(),
-    maxTimeoutSeconds: 300,
+    maxTimeoutSeconds: 600, // room to finish the work (up to 300 s) before settling
     asset:             "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC on Base
     // EIP-712 domain params for USDC on Base — required for correct signature
     extra:             { name: "USD Coin", version: "2" },
