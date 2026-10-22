@@ -8,7 +8,7 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { withPlaceholderNotice, requirePayment, buildPaymentReqs, buildBazaarExtension, send402 } from "./_x402-gate.js";
+import { withPlaceholderNotice, buildPaymentReqs, buildBazaarExtension, send402, verifyPayment, settlePayment, sendNotCharged } from "./_x402-gate.js";
 import { checkCitationsRaw, isSharedCallerId, type CitationSnapshot } from "../src/tools.js";
 
 const PRICE_USDC    = 1.50;
@@ -73,8 +73,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: "queries must be a non-empty array of strings" });
   }
 
-  const paymentHeader = await requirePayment(req, res, PRICE_USDC, BAZAAR, RESOURCE_URL(), RESOURCE_DESC);
-  if (paymentHeader === null) return;
+  const payment = await verifyPayment(req, res, PRICE_USDC, BAZAAR, RESOURCE_URL(), RESOURCE_DESC);
+  if (payment === null) return;
 
   try {
     // Run citation checks for all brands in parallel
@@ -158,6 +158,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       sentimentSummary ? `\n### Sentiment (how AI engines talk about each brand)\n${sentimentSummary}` : "",
     ].filter((l) => l !== undefined).join("\n");
 
+    // Charge only now that the result is ready (see _x402-gate.ts "Charge only after the work succeeds").
+    const settled = await settlePayment(payment);
+    if (!settled.ok) return send402(res, buildPaymentReqs(PRICE_USDC), BAZAAR, RESOURCE_URL(), RESOURCE_DESC, settled.reason);
+    if (settled.paymentResponse) res.setHeader("PAYMENT-RESPONSE", settled.paymentResponse);
+
     await Promise.all([
       db.from("query_log").insert({
         caller_id,
@@ -169,7 +174,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         { caller_id, query_count: 1, updated_at: new Date().toISOString() },
         { onConflict: "caller_id" }
       ),
-    ]);
+    ]).catch((e) => console.error("[aeonos/share-of-voice] log write failed:", e.message));
 
     const text = withPlaceholderNotice(report, brands.join(" "), caller_id, RESOURCE_URL(), {
       resendBody: '{"brands": ["yourdomain.com", "your-competitor.com"], "queries": ["a question your buyers ask AI"], "caller_id": "yourdomain.com"}',
@@ -184,7 +189,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       snapshots,
     });
   } catch (e: any) {
-    console.error("[aeonos/share-of-voice]", e.message);
-    return res.status(500).json({ error: e.message });
+    return sendNotCharged(res, "share-of-voice", caller_id, e);
   }
 }

@@ -8,7 +8,7 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { withPlaceholderNotice, requirePayment, buildPaymentReqs, buildBazaarExtension, send402 } from "./_x402-gate.js";
+import { withPlaceholderNotice, buildPaymentReqs, buildBazaarExtension, send402, verifyPayment, settlePayment, sendNotCharged } from "./_x402-gate.js";
 import { runAgent } from "../src/agent.js";
 
 const PRICE_USDC    = 0.50;
@@ -41,12 +41,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const query     = body?.query || body?.message || "";
   const caller_id = body?.caller_id || "anon";
 
-  const paymentHeader = await requirePayment(req, res, PRICE_USDC, BAZAAR, RESOURCE_URL(), RESOURCE_DESC);
-  if (paymentHeader === null) return;
+  const payment = await verifyPayment(req, res, PRICE_USDC, BAZAAR, RESOURCE_URL(), RESOURCE_DESC);
+  if (payment === null) return;
 
   try {
     const directive = `Generate complete, production-ready JSON-LD Schema.org markup. Include all relevant schema types for the page. Output valid JSON-LD inside a code block, followed by a brief explanation of each schema type used and why.\n\nQuery: ${query}`;
     const result = await runAgent({ query: directive, caller_id });
+
+    // Charge only now that the result is ready (see _x402-gate.ts "Charge only after the work succeeds").
+    const settled = await settlePayment(payment);
+    if (!settled.ok) return send402(res, buildPaymentReqs(PRICE_USDC), BAZAAR, RESOURCE_URL(), RESOURCE_DESC, settled.reason);
+    if (settled.paymentResponse) res.setHeader("PAYMENT-RESPONSE", settled.paymentResponse);
 
     await Promise.all([
       db.from("query_log").insert({
@@ -60,7 +65,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         { caller_id, query_count: 1, updated_at: new Date().toISOString() },
         { onConflict: "caller_id" }
       ),
-    ]);
+    ]).catch((e) => console.error("[aeonos/schema] log write failed:", e.message));
 
     return res.json({
       status:    "completed",
@@ -69,7 +74,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       tokens:    result.tokens_used,
     });
   } catch (e: any) {
-    console.error("[aeonos/schema]", e.message);
-    return res.status(500).json({ error: e.message });
+    return sendNotCharged(res, "schema", caller_id, e);
   }
 }
