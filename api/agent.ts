@@ -179,7 +179,7 @@ async function handleSync(
     if (!settled.ok) return send402(res, payment.reqs!, settled.reason);
     if (settled.paymentResponse) res.setHeader("PAYMENT-RESPONSE", settled.paymentResponse);
   }
-  await logQuery(caller_id, query, result, payment?.header);
+  await logQuery(caller_id, query, result, payment?.header).catch((e) => console.error("[aeonos] log write failed:", e.message));
 
   const body = {
     status: "completed",
@@ -245,7 +245,7 @@ async function handleAsync(
       }
       payment_response = settled.paymentResponse;
     }
-    await logQuery(caller_id, query, result, payment?.header);
+    await logQuery(caller_id, query, result, payment?.header).catch((e) => console.error("[aeonos] log write failed:", e.message));
     await db.from("tasks").update({
       status: "completed",
       result: {
@@ -329,7 +329,7 @@ async function handleStream(
       }
       payment_response = settled.paymentResponse;
     }
-    await logQuery(caller_id, query, result, payment?.header);
+    await logQuery(caller_id, query, result, payment?.header).catch((e) => console.error("[aeonos] log write failed:", e.message));
 
     for (const tool of result.tool_calls_made) {
       send({ status: "working", progress: `Completed: ${tool}` });
@@ -365,12 +365,17 @@ function extractCallerId(req: VercelRequest): string | null {
 }
 
 async function getQueryCount(caller_id: string): Promise<number> {
-  const { data } = await db
-    .from("caller_memory")
-    .select("query_count")
-    .eq("caller_id", caller_id)
-    .single();
-  return data?.query_count || 0;
+  // A count is never worth failing a paid call over: fall back to 0 if the database is unreachable.
+  try {
+    const { data } = await db
+      .from("caller_memory")
+      .select("query_count")
+      .eq("caller_id", caller_id)
+      .single();
+    return data?.query_count || 0;
+  } catch {
+    return 0;
+  }
 }
 
 async function logQuery(

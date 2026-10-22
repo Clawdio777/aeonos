@@ -15,6 +15,7 @@ const state = {
   settleOk: true,
   settleCalls: 0,
   agent: "ok" as "ok" | "throw",
+  logFails: false,
   emails: [] as any[],
 };
 
@@ -37,7 +38,10 @@ mock.module("../src/agent.js", () => ({ runAgent }));
 
 // Chainable Supabase stub: every call returns itself, awaiting it gives an empty row.
 const chain = (): any => {
-  const done = Promise.resolve({ data: { id: "task-1", query_count: 0 }, error: null });
+  const done = state.logFails
+    ? Promise.reject(new Error("db down"))
+    : Promise.resolve({ data: { id: "task-1", query_count: 0 }, error: null });
+  done.catch(() => {}); // avoid unhandled-rejection noise for chains nobody awaits
   return new Proxy(() => {}, {
     get: (_t, k) => (k === "then" ? done.then.bind(done) : k === "catch" ? done.catch.bind(done) : () => chain()),
     apply: () => chain(),
@@ -76,7 +80,7 @@ const { default: audit } = await import("../api/audit.ts");
 const { default: agent } = await import("../api/agent.ts");
 
 beforeEach(() => {
-  state.verifyValid = true; state.settleOk = true; state.settleCalls = 0; state.agent = "ok"; state.emails = [];
+  state.verifyValid = true; state.settleOk = true; state.settleCalls = 0; state.agent = "ok"; state.logFails = false; state.emails = [];
 });
 
 describe("x402 routes charge only after the work succeeds", () => {
@@ -118,6 +122,15 @@ describe("x402 routes charge only after the work succeeds", () => {
     await audit(paidReq() as any, res);
     expect(res.statusCode).toBe(402);
     expect(state.settleCalls).toBe(0);
+    expect(state.emails).toHaveLength(0);
+  });
+
+  test("agent: a failed log write after payment still delivers the result (never says 'not charged' after charging)", async () => {
+    state.logFails = true;
+    const res = fakeRes();
+    await agent(paidReq() as any, res);
+    expect(state.settleCalls).toBe(1);
+    expect(res.body.status).toBe("completed");
     expect(state.emails).toHaveLength(0);
   });
 
