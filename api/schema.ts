@@ -49,7 +49,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const result = await runAgent({ query: directive, caller_id });
 
     // Charge only now that the result is ready (see _x402-gate.ts "Charge only after the work succeeds").
-    const settled = await settlePayment(payment);
+    const settled = await settlePayment(payment, "schema", caller_id);
     if (!settled.ok) return send402(res, buildPaymentReqs(PRICE_USDC), BAZAAR, RESOURCE_URL(), RESOURCE_DESC, settled.reason);
     if (settled.paymentResponse) res.setHeader("PAYMENT-RESPONSE", settled.paymentResponse);
 
