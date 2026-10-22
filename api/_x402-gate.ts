@@ -10,6 +10,8 @@ import { x402Version as X402_VERSION } from "@x402/core";
 import { createFacilitatorConfig } from "@coinbase/x402";
 import { declareDiscoveryExtension } from "@x402/extensions";
 import { declareBuilderCodeExtension, BUILDER_CODE_PATTERN } from "@x402/extensions/builder-code";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createHash } from "node:crypto";
 
 // ── Shared facilitator client ──────────────────────────────────────────────────
 export const facilitatorClient = new HTTPFacilitatorClient(
@@ -205,7 +207,34 @@ export async function verifyPayment(
     return null;
   }
 
-  return { header: xPaymentHeader, payload: paymentPayload, reqs: paymentReqs };
+  const payment = { header: xPaymentHeader, payload: paymentPayload, reqs: paymentReqs };
+  if (!(await claimPayment(res, payment))) return null;
+  return payment;
+}
+
+// ── One signed payment, one run ──────────────────────────────────────────────
+// Settling after the work leaves a window where the same signed payment could be sent again (or in
+// parallel) and get the work done twice. Each payment is claimed in payment_claims (primary key) before
+// any work starts; a second claim is refused. If the claim can't be recorded, the work doesn't start.
+export function paymentId(payload: PaymentPayload): string {
+  return createHash("sha256").update(JSON.stringify(payload.payload)).digest("hex");
+}
+
+let claimsDb: SupabaseClient | undefined;
+
+// Returns true if this payment is new and now claimed; otherwise sends 409/503 and returns false.
+export async function claimPayment(res: VercelResponse, p: PendingPayment): Promise<boolean> {
+  if (!p.payload) return true;
+  claimsDb ??= createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!);
+  const { error } = await claimsDb.from("payment_claims").insert({ id: paymentId(p.payload) });
+  if (!error) return true;
+  if (error.code === "23505") {
+    res.status(409).json({ status: "failed", charged: false, error: PAYMENT_ALREADY_USED_MESSAGE });
+    return false;
+  }
+  console.error("[aeonos] payment claim failed:", error.message);
+  res.status(503).json({ status: "failed", charged: false, error: NOT_CHARGED_MESSAGE });
+  return false;
 }
 
 export type SettleOutcome =
@@ -213,23 +242,37 @@ export type SettleOutcome =
   | { ok: false; reason: string };
 
 // Takes the money. Call only once the result is ready to send. Internal (PayGated) calls are a no-op.
-export async function settlePayment(p: PendingPayment): Promise<SettleOutcome> {
+// If settlement fails the route withholds the result; Carly is told, since the work was done unpaid.
+export async function settlePayment(p: PendingPayment, route: string, caller_id: string): Promise<SettleOutcome> {
   if (!p.payload || !p.reqs) return { ok: true };
+  let outcome: SettleOutcome;
   try {
     const r = await facilitatorClient.settle(p.payload, p.reqs);
-    if (!r.success) return { ok: false, reason: r.errorReason || "settlement_failed" };
-    return { ok: true, paymentResponse: Buffer.from(JSON.stringify(r)).toString("base64") };
+    outcome = r.success
+      ? { ok: true, paymentResponse: Buffer.from(JSON.stringify(r)).toString("base64") }
+      : { ok: false, reason: r.errorReason || "settlement_failed" };
   } catch (e: any) {
     console.error("[aeonos] settle error:", e.message);
-    return { ok: false, reason: "settlement_failed" };
+    outcome = { ok: false, reason: "settlement_failed" };
   }
+  if (!outcome.ok) {
+    console.error(`[aeonos/${route}] settlement failed after the work succeeded, result withheld:`, outcome.reason);
+    await alertCarly(
+      `AEONOS: payment for a ${route} request failed to settle (result withheld)`,
+      `A paying request to /api/${route} finished the work, but settling the payment failed, so the result was withheld and nothing was charged.\n\nCaller: ${caller_id}\nReason: ${outcome.reason}\nTime: ${new Date().toISOString()}\n\nIf this repeats, check the CDP facilitator and the Vercel logs for aeonos.`,
+    );
+  }
+  return outcome;
 }
+
+export const PAYMENT_ALREADY_USED_MESSAGE =
+  "This payment has already been used for a request. Sign a new payment to run another one. Nothing more was charged.";
 
 export const NOT_CHARGED_MESSAGE =
   "AEONOS could not finish this request, so your payment was not taken. Nothing was charged. Please try again in a few minutes.";
 
 // The work failed before settlement: the buyer keeps their money. Sends a clear message (no raw error)
-// and emails Carly so a run of failures is noticed the same day.
+// and alerts Carly so a run of failures is noticed the same day.
 export async function sendNotCharged(res: VercelResponse, route: string, caller_id: string, err: unknown) {
   await alertPaidFailure(route, caller_id, err);
   return res.status(503).json({ status: "failed", charged: false, error: NOT_CHARGED_MESSAGE });
@@ -238,21 +281,33 @@ export async function sendNotCharged(res: VercelResponse, route: string, caller_
 export async function alertPaidFailure(route: string, caller_id: string, err: unknown) {
   const detail = err instanceof Error ? err.message : String(err);
   console.error(`[aeonos/${route}] paid run failed, not charged:`, detail);
+  await alertCarly(
+    `AEONOS: a paid ${route} request failed (buyer not charged)`,
+    `A paying request to /api/${route} failed before delivery, so the payment was not taken.\n\nCaller: ${caller_id}\nError: ${detail.slice(0, 500)}\nTime: ${new Date().toISOString()}\n\nIf this repeats, check the Vercel logs for aeonos.`,
+  );
+}
+
+// Email (Resend) and Telegram, each sent only if its env vars are set. Never throws.
+export async function alertCarly(subject: string, text: string) {
   const key = process.env.RESEND_API_KEY, to = process.env.NOTIFY_EMAIL;
-  if (!key || !to) return;
-  try {
-    await fetch("https://api.resend.com/emails", {
+  const tgToken = process.env.TELEGRAM_BOT_TOKEN, tgChat = process.env.TELEGRAM_CHAT_ID;
+  await Promise.all([
+    key && to && fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${key.trim()}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         from: (process.env.RESEND_FROM || "AEONOS <noreply@resend.dev>").trim(),
         to: to.trim(),
-        subject: `AEONOS: a paid ${route} request failed (buyer not charged)`,
-        text: `A paying request to /api/${route} failed before delivery, so the payment was not taken.\n\nCaller: ${caller_id}\nError: ${detail.slice(0, 500)}\nTime: ${new Date().toISOString()}\n\nIf this repeats, check the Vercel logs for aeonos.`,
+        subject,
+        text,
       }),
       signal: AbortSignal.timeout(5_000),
-    });
-  } catch (e: any) {
-    console.error("[aeonos] failure alert email failed:", e.message);
-  }
+    }).catch((e: any) => console.error("[aeonos] alert email failed:", e.message)),
+    tgToken && tgChat && fetch(`https://api.telegram.org/bot${tgToken.trim()}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: tgChat.trim(), text: `⚠️ ${subject}\n\n${text}`.slice(0, 4000) }),
+      signal: AbortSignal.timeout(5_000),
+    }).catch((e: any) => console.error("[aeonos] alert Telegram failed:", e.name)),
+  ]);
 }

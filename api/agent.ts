@@ -22,7 +22,7 @@ import { x402Version as X402_VERSION } from "@x402/core";
 import { createFacilitatorConfig } from "@coinbase/x402";
 import { declareDiscoveryExtension } from "@x402/extensions";
 import { runAgent } from "../src/agent.js";
-import { withPlaceholderNotice, DISCOVERY_CALLER_ID_EXAMPLE, withBuilderCode, settlePayment, alertPaidFailure, NOT_CHARGED_MESSAGE, type PendingPayment } from "./_x402-gate.js";
+import { withPlaceholderNotice, DISCOVERY_CALLER_ID_EXAMPLE, withBuilderCode, settlePayment, alertPaidFailure, claimPayment, NOT_CHARGED_MESSAGE, type PendingPayment } from "./_x402-gate.js";
 import agentCard from "../public/.well-known/agent.json" with { type: "json" };
 
 // ── Coinbase CDP facilitator for Base mainnet ──────────────────────────────────
@@ -142,6 +142,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Verified, not settled: each pattern below settles only once it has a result to deliver
   // (see _x402-gate.ts "Charge only after the work succeeds").
   const payment: PendingPayment = { header: xPaymentHeader, payload: paymentPayload, reqs: paymentReqs };
+  if (!(await claimPayment(res, payment))) return;
 
   const queryCount = await getQueryCount(caller_id);
 
@@ -175,7 +176,7 @@ async function handleSync(
 ) {
   const result = await runAgent({ query, caller_id, citationSamples: 1 });
   if (payment) {
-    const settled = await settlePayment(payment);
+    const settled = await settlePayment(payment, "agent", caller_id);
     if (!settled.ok) return send402(res, payment.reqs!, settled.reason);
     if (settled.paymentResponse) res.setHeader("PAYMENT-RESPONSE", settled.paymentResponse);
   }
@@ -234,7 +235,7 @@ async function handleAsync(
     const result = await runAgent({ query, caller_id, citationSamples: 1 });
     let payment_response: string | undefined;
     if (payment) {
-      const settled = await settlePayment(payment);
+      const settled = await settlePayment(payment, "agent", caller_id);
       if (!settled.ok) {
         await db.from("tasks").update({
           status: "failed",
@@ -322,7 +323,7 @@ async function handleStream(
     // Headers are already sent on a stream, so the settlement receipt goes in the final event.
     let payment_response: string | undefined;
     if (payment) {
-      const settled = await settlePayment(payment);
+      const settled = await settlePayment(payment, "agent", caller_id);
       if (!settled.ok) {
         send({ status: "failed", charged: false, error: `Payment could not be completed (${settled.reason}). Nothing was charged.` });
         return res.end();
