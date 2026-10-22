@@ -5,7 +5,7 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { HTTPFacilitatorClient } from "@x402/core/server";
-import type { PaymentRequired, PaymentPayload, PaymentRequirements } from "@x402/core/types";
+import type { PaymentRequired, PaymentPayload, PaymentRequirements, SettleResponse } from "@x402/core/types";
 import { x402Version as X402_VERSION } from "@x402/core";
 import { createFacilitatorConfig } from "@coinbase/x402";
 import { declareDiscoveryExtension } from "@x402/extensions";
@@ -13,15 +13,26 @@ import { declareBuilderCodeExtension, BUILDER_CODE_PATTERN } from "@x402/extensi
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createHash } from "node:crypto";
 
-// ── Shared facilitator client ──────────────────────────────────────────────────
-export const facilitatorClient = new HTTPFacilitatorClient(
-  process.env.CDP_API_KEY_NAME && process.env.CDP_API_KEY_PRIVATE_KEY
-    ? createFacilitatorConfig(
-        process.env.CDP_API_KEY_NAME.trim(),
-        process.env.CDP_API_KEY_PRIVATE_KEY.trim()
-      )
-    : {}
-);
+// ── Shared facilitator client (Coinbase CDP, Base mainnet) ────────────────────
+// Fails closed: without the CDP keys there is no client and paid routes answer 500 "payments not
+// configured". Before 22/10/2026 missing keys silently fell back to the default x402.org facilitator.
+// .trim() is critical: Vercel env vars can have trailing newlines.
+let facilitator: HTTPFacilitatorClient | undefined;
+
+export function getFacilitatorClient(): HTTPFacilitatorClient | null {
+  const name = process.env.CDP_API_KEY_NAME?.trim();
+  const key  = process.env.CDP_API_KEY_PRIVATE_KEY?.trim();
+  if (!name || !key) return null;
+  facilitator ??= new HTTPFacilitatorClient(createFacilitatorConfig(name, key));
+  return facilitator;
+}
+
+export const PAYMENTS_NOT_CONFIGURED_MESSAGE = "payments not configured";
+
+export function sendPaymentsNotConfigured(res: VercelResponse) {
+  console.error("[aeonos] payments not configured: CDP_API_KEY_NAME / CDP_API_KEY_PRIVATE_KEY missing, paid request refused");
+  return res.status(500).json({ error: PAYMENTS_NOT_CONFIGURED_MESSAGE });
+}
 
 const PAYMENT_ADDRESS = "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc";
 const USDC_ASSET      = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -194,6 +205,12 @@ export async function verifyPayment(
     return null;
   }
 
+  const facilitatorClient = getFacilitatorClient();
+  if (!facilitatorClient) {
+    sendPaymentsNotConfigured(res);
+    return null;
+  }
+
   let verifyResult: { isValid: boolean; invalidReason?: string };
   try {
     verifyResult = await facilitatorClient.verify(paymentPayload, paymentReqs);
@@ -238,24 +255,67 @@ export async function claimPayment(res: VercelResponse, p: PendingPayment): Prom
 }
 
 export type SettleOutcome =
-  | { ok: true; paymentResponse?: string }
+  | { ok: true; paymentResponse?: string; pendingTransaction?: string }
   | { ok: false; reason: string };
+
+// The facilitator broadcast the transaction but it isn't confirmed yet. It reports this either as a
+// settle result or (on a non-200) as a thrown SettleError carrying the same fields.
+export const SETTLEMENT_PENDING_REASON = "settlement_pending";
+
+function pendingTransaction(r: unknown): string | undefined {
+  if (typeof r !== "object" || r === null) return undefined;
+  const { success, errorReason, transaction } = r as Partial<SettleResponse>;
+  return !success && errorReason === SETTLEMENT_PENDING_REASON && transaction ? transaction : undefined;
+}
 
 // Takes the money. Call only once the result is ready to send. Internal (PayGated) calls are a no-op.
 // If settlement fails the route withholds the result; Carly is told, since the work was done unpaid.
+// "settlement_pending" is retried once with the identical payload (as x402ResourceServer's
+// settleWithPendingRetry does). Still pending after that: the transaction was broadcast, so the buyer has
+// most likely paid. The result is delivered (never "nothing was charged") and Carly gets the tx hash.
 export async function settlePayment(p: PendingPayment, route: string, caller_id: string): Promise<SettleOutcome> {
-  if (!p.payload || !p.reqs) return { ok: true };
+  const { payload, reqs } = p;
+  if (!payload || !reqs) return { ok: true };
+  const client = getFacilitatorClient();
   let outcome: SettleOutcome;
-  try {
-    const r = await facilitatorClient.settle(p.payload, p.reqs);
-    outcome = r.success
-      ? { ok: true, paymentResponse: Buffer.from(JSON.stringify(r)).toString("base64") }
-      : { ok: false, reason: r.errorReason || "settlement_failed" };
-  } catch (e: any) {
-    console.error("[aeonos] settle error:", e.message);
-    outcome = { ok: false, reason: "settlement_failed" };
+  if (!client) {
+    outcome = { ok: false, reason: "payments_not_configured" };
+  } else {
+    const attempt = async (): Promise<{ result?: SettleResponse; pendingTx?: string }> => {
+      try {
+        const result = await client.settle(payload, reqs);
+        return { result, pendingTx: pendingTransaction(result) };
+      } catch (e) {
+        const pendingTx = pendingTransaction(e);
+        if (pendingTx) return { pendingTx };
+        throw e;
+      }
+    };
+    let pendingTx: string | undefined;
+    try {
+      let a = await attempt();
+      if (a.pendingTx) {
+        pendingTx = a.pendingTx;
+        a = await attempt();
+        pendingTx = a.pendingTx;
+      }
+      if (pendingTx) outcome = { ok: true, pendingTransaction: pendingTx };
+      else if (a.result?.success) outcome = { ok: true, paymentResponse: Buffer.from(JSON.stringify(a.result)).toString("base64") };
+      else outcome = { ok: false, reason: a.result?.errorReason || "settlement_failed" };
+    } catch (e: any) {
+      console.error("[aeonos] settle error:", e.message);
+      // A broadcast transaction followed by an error on the retry is still most likely paid.
+      outcome = pendingTx ? { ok: true, pendingTransaction: pendingTx } : { ok: false, reason: "settlement_failed" };
+    }
   }
-  if (!outcome.ok) {
+  if (outcome.ok && outcome.pendingTransaction) {
+    const tx = outcome.pendingTransaction;
+    console.error(`[aeonos/${route}] settlement still pending after one retry, result delivered: ${tx}`);
+    await alertCarly(
+      `AEONOS: payment for a ${route} request is still pending (result delivered, reconcile tx)`,
+      `A paying request to /api/${route} finished the work. The facilitator broadcast the payment but reported it as pending twice, so the result was delivered (the buyer has most likely paid).\n\nCaller: ${caller_id}\nTransaction: ${tx}\nCheck: https://basescan.org/tx/${tx}\nTime: ${new Date().toISOString()}\n\nReconcile: confirm the transaction landed and the USDC arrived. If it failed, the work was delivered unpaid.`,
+    );
+  } else if (!outcome.ok) {
     console.error(`[aeonos/${route}] settlement failed after the work succeeded, result withheld:`, outcome.reason);
     await alertCarly(
       `AEONOS: payment for a ${route} request failed to settle (result withheld)`,
