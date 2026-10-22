@@ -5,21 +5,34 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { HTTPFacilitatorClient } from "@x402/core/server";
-import type { PaymentRequired, PaymentPayload, PaymentRequirements } from "@x402/core/types";
+import type { PaymentRequired, PaymentPayload, PaymentRequirements, SettleResponse } from "@x402/core/types";
 import { x402Version as X402_VERSION } from "@x402/core";
 import { createFacilitatorConfig } from "@coinbase/x402";
 import { declareDiscoveryExtension } from "@x402/extensions";
 import { declareBuilderCodeExtension, BUILDER_CODE_PATTERN } from "@x402/extensions/builder-code";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createHash } from "node:crypto";
 
-// ── Shared facilitator client ──────────────────────────────────────────────────
-export const facilitatorClient = new HTTPFacilitatorClient(
-  process.env.CDP_API_KEY_NAME && process.env.CDP_API_KEY_PRIVATE_KEY
-    ? createFacilitatorConfig(
-        process.env.CDP_API_KEY_NAME.trim(),
-        process.env.CDP_API_KEY_PRIVATE_KEY.trim()
-      )
-    : {}
-);
+// ── Shared facilitator client (Coinbase CDP, Base mainnet) ────────────────────
+// Fails closed: without the CDP keys there is no client and paid routes answer 500 "payments not
+// configured". Before 22/10/2026 missing keys silently fell back to the default x402.org facilitator.
+// .trim() is critical: Vercel env vars can have trailing newlines.
+let facilitator: HTTPFacilitatorClient | undefined;
+
+export function getFacilitatorClient(): HTTPFacilitatorClient | null {
+  const name = process.env.CDP_API_KEY_NAME?.trim();
+  const key  = process.env.CDP_API_KEY_PRIVATE_KEY?.trim();
+  if (!name || !key) return null;
+  facilitator ??= new HTTPFacilitatorClient(createFacilitatorConfig(name, key));
+  return facilitator;
+}
+
+export const PAYMENTS_NOT_CONFIGURED_MESSAGE = "payments not configured";
+
+export function sendPaymentsNotConfigured(res: VercelResponse) {
+  console.error("[aeonos] payments not configured: CDP_API_KEY_NAME / CDP_API_KEY_PRIVATE_KEY missing, paid request refused");
+  return res.status(500).json({ error: PAYMENTS_NOT_CONFIGURED_MESSAGE });
+}
 
 const PAYMENT_ADDRESS = "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc";
 const USDC_ASSET      = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -192,6 +205,12 @@ export async function verifyPayment(
     return null;
   }
 
+  const facilitatorClient = getFacilitatorClient();
+  if (!facilitatorClient) {
+    sendPaymentsNotConfigured(res);
+    return null;
+  }
+
   let verifyResult: { isValid: boolean; invalidReason?: string };
   try {
     verifyResult = await facilitatorClient.verify(paymentPayload, paymentReqs);
@@ -205,31 +224,132 @@ export async function verifyPayment(
     return null;
   }
 
-  return { header: xPaymentHeader, payload: paymentPayload, reqs: paymentReqs };
+  const payment = { header: xPaymentHeader, payload: paymentPayload, reqs: paymentReqs };
+  if (!(await claimPayment(res, payment))) return null;
+  return payment;
+}
+
+// ── One signed payment, one run ──────────────────────────────────────────────
+// Settling after the work leaves a window where the same signed payment could be sent again (or in
+// parallel) and get the work done twice. Each payment is claimed in payment_claims (primary key) before
+// any work starts; a second claim is refused. If the claim can't be recorded, the work doesn't start.
+// The id is the payer plus the authorisation's nonce (EIP-3009 `authorization` or Permit2
+// `permit2Authorization`): the token contract accepts each payer+nonce once, so this is the payment's real
+// identity however the JSON is re-encoded or re-signed. A hash of the raw JSON (the earlier version) could be
+// dodged by reordering keys. Payloads without a nonce fall back to a key-sorted hash.
+export function paymentId(payload: PaymentPayload): string {
+  const p = (payload.payload ?? {}) as Record<string, any>;
+  const auth = p.authorization ?? p.permit2Authorization;
+  const from = typeof auth?.from === "string" ? auth.from.toLowerCase() : "";
+  const nonce = auth?.nonce != null ? String(auth.nonce).toLowerCase() : "";
+  const key = from && nonce ? `evm|${from}|${nonce}` : `raw|${canonicalJson(p)}`;
+  return createHash("sha256").update(key).digest("hex");
+}
+
+function canonicalJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(",")}]`;
+  if (v && typeof v === "object") {
+    return `{${Object.keys(v).sort().map(k => `${JSON.stringify(k)}:${canonicalJson((v as any)[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(v);
+}
+
+let claimsDb: SupabaseClient | undefined;
+
+// Returns true if this payment is new and now claimed; otherwise sends 409/503 and returns false.
+export async function claimPayment(res: VercelResponse, p: PendingPayment): Promise<boolean> {
+  if (!p.payload) return true;
+  claimsDb ??= createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!);
+  const { error } = await claimsDb.from("payment_claims").insert({ id: paymentId(p.payload) });
+  if (!error) return true;
+  if (error.code === "23505") {
+    res.status(409).json({ status: "failed", charged: false, error: PAYMENT_ALREADY_USED_MESSAGE });
+    return false;
+  }
+  console.error("[aeonos] payment claim failed:", error.message);
+  res.status(503).json({ status: "failed", charged: false, error: NOT_CHARGED_MESSAGE });
+  return false;
 }
 
 export type SettleOutcome =
-  | { ok: true; paymentResponse?: string }
+  | { ok: true; paymentResponse?: string; pendingTransaction?: string }
   | { ok: false; reason: string };
 
-// Takes the money. Call only once the result is ready to send. Internal (PayGated) calls are a no-op.
-export async function settlePayment(p: PendingPayment): Promise<SettleOutcome> {
-  if (!p.payload || !p.reqs) return { ok: true };
-  try {
-    const r = await facilitatorClient.settle(p.payload, p.reqs);
-    if (!r.success) return { ok: false, reason: r.errorReason || "settlement_failed" };
-    return { ok: true, paymentResponse: Buffer.from(JSON.stringify(r)).toString("base64") };
-  } catch (e: any) {
-    console.error("[aeonos] settle error:", e.message);
-    return { ok: false, reason: "settlement_failed" };
-  }
+// The facilitator broadcast the transaction but it isn't confirmed yet. It reports this either as a
+// settle result or (on a non-200) as a thrown SettleError carrying the same fields.
+export const SETTLEMENT_PENDING_REASON = "settlement_pending";
+
+function pendingTransaction(r: unknown): string | undefined {
+  if (typeof r !== "object" || r === null) return undefined;
+  const { success, errorReason, transaction } = r as Partial<SettleResponse>;
+  return !success && errorReason === SETTLEMENT_PENDING_REASON && transaction ? transaction : undefined;
 }
+
+// Takes the money. Call only once the result is ready to send. Internal (PayGated) calls are a no-op.
+// If settlement fails the route withholds the result; Carly is told, since the work was done unpaid.
+// "settlement_pending" is retried once with the identical payload (as x402ResourceServer's
+// settleWithPendingRetry does). Still pending after that: the transaction was broadcast, so the buyer has
+// most likely paid. The result is delivered (never "nothing was charged") and Carly gets the tx hash.
+export async function settlePayment(p: PendingPayment, route: string, caller_id: string): Promise<SettleOutcome> {
+  const { payload, reqs } = p;
+  if (!payload || !reqs) return { ok: true };
+  const client = getFacilitatorClient();
+  let outcome: SettleOutcome;
+  if (!client) {
+    outcome = { ok: false, reason: "payments_not_configured" };
+  } else {
+    const attempt = async (): Promise<{ result?: SettleResponse; pendingTx?: string }> => {
+      try {
+        const result = await client.settle(payload, reqs);
+        return { result, pendingTx: pendingTransaction(result) };
+      } catch (e) {
+        const pendingTx = pendingTransaction(e);
+        if (pendingTx) return { pendingTx };
+        throw e;
+      }
+    };
+    let pendingTx: string | undefined;
+    try {
+      let a = await attempt();
+      if (a.pendingTx) {
+        pendingTx = a.pendingTx;
+        a = await attempt();
+        pendingTx = a.pendingTx;
+      }
+      if (pendingTx) outcome = { ok: true, pendingTransaction: pendingTx };
+      else if (a.result?.success) outcome = { ok: true, paymentResponse: Buffer.from(JSON.stringify(a.result)).toString("base64") };
+      else outcome = { ok: false, reason: a.result?.errorReason || "settlement_failed" };
+    } catch (e: any) {
+      console.error("[aeonos] settle error:", e.message);
+      // A broadcast transaction followed by an error on the retry is still most likely paid.
+      outcome = pendingTx ? { ok: true, pendingTransaction: pendingTx } : { ok: false, reason: "settlement_failed" };
+    }
+  }
+  if (outcome.ok && outcome.pendingTransaction) {
+    const tx = outcome.pendingTransaction;
+    console.error(`[aeonos/${route}] settlement still pending after one retry, result delivered: ${tx}`);
+    await alertCarly(
+      `AEONOS: payment for a ${route} request is still pending (result delivered, reconcile tx)`,
+      `A paying request to /api/${route} finished the work. The facilitator broadcast the payment but reported it as pending twice, so the result was delivered (the buyer has most likely paid).\n\nCaller: ${caller_id}\nTransaction: ${tx}\nCheck: https://basescan.org/tx/${tx}\nTime: ${new Date().toISOString()}\n\nReconcile: confirm the transaction landed and the USDC arrived. If it failed, the work was delivered unpaid.`,
+    );
+  } else if (!outcome.ok) {
+    console.error(`[aeonos/${route}] settlement failed after the work succeeded, result withheld:`, outcome.reason);
+    await alertCarly(
+      `AEONOS: payment for a ${route} request failed to settle (result withheld)`,
+      `A paying request to /api/${route} finished the work, but settling the payment failed, so the result was withheld and nothing was charged.\n\nCaller: ${caller_id}\nReason: ${outcome.reason}\nTime: ${new Date().toISOString()}\n\nIf this repeats, check the CDP facilitator and the Vercel logs for aeonos.`,
+    );
+  }
+  return outcome;
+}
+
+export const PAYMENT_ALREADY_USED_MESSAGE =
+  "This payment has already been used for a request. Sign a new payment to run another one. Nothing more was charged.";
 
 export const NOT_CHARGED_MESSAGE =
   "AEONOS could not finish this request, so your payment was not taken. Nothing was charged. Please try again in a few minutes.";
 
 // The work failed before settlement: the buyer keeps their money. Sends a clear message (no raw error)
-// and emails Carly so a run of failures is noticed the same day.
+// and alerts Carly so a run of failures is noticed the same day.
 export async function sendNotCharged(res: VercelResponse, route: string, caller_id: string, err: unknown) {
   await alertPaidFailure(route, caller_id, err);
   return res.status(503).json({ status: "failed", charged: false, error: NOT_CHARGED_MESSAGE });
@@ -238,21 +358,33 @@ export async function sendNotCharged(res: VercelResponse, route: string, caller_
 export async function alertPaidFailure(route: string, caller_id: string, err: unknown) {
   const detail = err instanceof Error ? err.message : String(err);
   console.error(`[aeonos/${route}] paid run failed, not charged:`, detail);
+  await alertCarly(
+    `AEONOS: a paid ${route} request failed (buyer not charged)`,
+    `A paying request to /api/${route} failed before delivery, so the payment was not taken.\n\nCaller: ${caller_id}\nError: ${detail.slice(0, 500)}\nTime: ${new Date().toISOString()}\n\nIf this repeats, check the Vercel logs for aeonos.`,
+  );
+}
+
+// Email (Resend) and Telegram, each sent only if its env vars are set. Never throws.
+export async function alertCarly(subject: string, text: string) {
   const key = process.env.RESEND_API_KEY, to = process.env.NOTIFY_EMAIL;
-  if (!key || !to) return;
-  try {
-    await fetch("https://api.resend.com/emails", {
+  const tgToken = process.env.TELEGRAM_BOT_TOKEN, tgChat = process.env.TELEGRAM_CHAT_ID;
+  await Promise.all([
+    key && to && fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${key.trim()}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         from: (process.env.RESEND_FROM || "AEONOS <noreply@resend.dev>").trim(),
         to: to.trim(),
-        subject: `AEONOS: a paid ${route} request failed (buyer not charged)`,
-        text: `A paying request to /api/${route} failed before delivery, so the payment was not taken.\n\nCaller: ${caller_id}\nError: ${detail.slice(0, 500)}\nTime: ${new Date().toISOString()}\n\nIf this repeats, check the Vercel logs for aeonos.`,
+        subject,
+        text,
       }),
       signal: AbortSignal.timeout(5_000),
-    });
-  } catch (e: any) {
-    console.error("[aeonos] failure alert email failed:", e.message);
-  }
+    }).catch((e: any) => console.error("[aeonos] alert email failed:", e.message)),
+    tgToken && tgChat && fetch(`https://api.telegram.org/bot${tgToken.trim()}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: tgChat.trim(), text: `⚠️ ${subject}\n\n${text}`.slice(0, 4000) }),
+      signal: AbortSignal.timeout(5_000),
+    }).catch((e: any) => console.error("[aeonos] alert Telegram failed:", e.name)),
+  ]);
 }
