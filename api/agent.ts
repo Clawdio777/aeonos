@@ -16,25 +16,13 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { HTTPFacilitatorClient } from "@x402/core/server";
+import { waitUntil } from "@vercel/functions";
 import type { PaymentRequired, PaymentPayload, PaymentRequirements } from "@x402/core/types";
 import { x402Version as X402_VERSION } from "@x402/core";
-import { createFacilitatorConfig } from "@coinbase/x402";
 import { declareDiscoveryExtension } from "@x402/extensions";
 import { runAgent } from "../src/agent.js";
-import { withPlaceholderNotice, DISCOVERY_CALLER_ID_EXAMPLE, withBuilderCode, settlePayment, alertPaidFailure, NOT_CHARGED_MESSAGE, type PendingPayment } from "./_x402-gate.js";
+import { withPlaceholderNotice, DISCOVERY_CALLER_ID_EXAMPLE, withBuilderCode, settlePayment, alertPaidFailure, alertCarly, claimPayment, NOT_CHARGED_MESSAGE, getFacilitatorClient, sendPaymentsNotConfigured, type PendingPayment } from "./_x402-gate.js";
 import agentCard from "../public/.well-known/agent.json" with { type: "json" };
-
-// ── Coinbase CDP facilitator for Base mainnet ──────────────────────────────────
-// .trim() is critical — Vercel env vars can have trailing newlines
-const facilitatorClient = new HTTPFacilitatorClient(
-  process.env.CDP_API_KEY_NAME && process.env.CDP_API_KEY_PRIVATE_KEY
-    ? createFacilitatorConfig(
-        process.env.CDP_API_KEY_NAME.trim(),
-        process.env.CDP_API_KEY_PRIVATE_KEY.trim()
-      )
-    : {}
-);
 
 const PRICE_PER_QUERY_USDC = 0.05;
 const AGENT_URL = () => `${process.env.AGENT_BASE_URL || "https://aeonos.basechainlabs.com"}/api/agent`;
@@ -128,6 +116,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return send402(res, paymentReqs, "invalid_payment");
   }
 
+  // Coinbase CDP facilitator (shared with the other paid routes); fails closed if its keys are missing.
+  const facilitatorClient = getFacilitatorClient();
+  if (!facilitatorClient) return sendPaymentsNotConfigured(res);
+
   let verifyResult: { isValid: boolean; invalidReason?: string };
   try {
     verifyResult = await facilitatorClient.verify(paymentPayload, paymentReqs);
@@ -142,6 +134,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Verified, not settled: each pattern below settles only once it has a result to deliver
   // (see _x402-gate.ts "Charge only after the work succeeds").
   const payment: PendingPayment = { header: xPaymentHeader, payload: paymentPayload, reqs: paymentReqs };
+  if (!(await claimPayment(res, payment))) return;
 
   const queryCount = await getQueryCount(caller_id);
 
@@ -175,7 +168,7 @@ async function handleSync(
 ) {
   const result = await runAgent({ query, caller_id, citationSamples: 1 });
   if (payment) {
-    const settled = await settlePayment(payment);
+    const settled = await settlePayment(payment, "agent", caller_id);
     if (!settled.ok) return send402(res, payment.reqs!, settled.reason);
     if (settled.paymentResponse) res.setHeader("PAYMENT-RESPONSE", settled.paymentResponse);
   }
@@ -229,44 +222,59 @@ async function handleAsync(
     res.json(immediate);
   }
 
-  // Run agent in background (Vercel waits for the function to complete even after response)
-  try {
-    const result = await runAgent({ query, caller_id, citationSamples: 1 });
-    let payment_response: string | undefined;
-    if (payment) {
-      const settled = await settlePayment(payment);
-      if (!settled.ok) {
-        await db.from("tasks").update({
-          status: "failed",
-          error: `Payment could not be completed (${settled.reason}), so the result was not released. Nothing was charged.`,
-          completed_at: new Date().toISOString(),
-        }).eq("id", task.id);
-        return;
+  // Run the agent after the response. waitUntil keeps the function alive until the run, settlement and
+  // task update finish; without it Vercel may cut the work off once the response has been sent.
+  waitUntil((async () => {
+    // Once settled, the buyer has paid: a later failure must never be reported as "not charged" (#43's rule).
+    let charged = false;
+    try {
+      const result = await runAgent({ query, caller_id, citationSamples: 1 });
+      let payment_response: string | undefined;
+      if (payment) {
+        const settled = await settlePayment(payment, "agent", caller_id);
+        if (!settled.ok) {
+          await db.from("tasks").update({
+            status: "failed",
+            error: `Payment could not be completed (${settled.reason}), so the result was not released. Nothing was charged.`,
+            completed_at: new Date().toISOString(),
+          }).eq("id", task.id);
+          return;
+        }
+        payment_response = settled.paymentResponse;
+        charged = true;
       }
-      payment_response = settled.paymentResponse;
-    }
-    await logQuery(caller_id, query, result, payment?.header).catch((e) => console.error("[aeonos] log write failed:", e.message));
-    await db.from("tasks").update({
-      status: "completed",
-      result: {
-        artifact: {
-          parts: [{ type: "text", text: withPlaceholderNotice(result.response, query, caller_id, AGENT_URL()) }],
-          index: 0,
+      await logQuery(caller_id, query, result, payment?.header).catch((e) => console.error("[aeonos] log write failed:", e.message));
+      await db.from("tasks").update({
+        status: "completed",
+        result: {
+          artifact: {
+            parts: [{ type: "text", text: withPlaceholderNotice(result.response, query, caller_id, AGENT_URL()) }],
+            index: 0,
+          },
+          tool_calls: result.tool_calls_made,
+          tokens: result.tokens_used,
+          ...(payment_response && { payment_response }),
         },
-        tool_calls: result.tool_calls_made,
-        tokens: result.tokens_used,
-        ...(payment_response && { payment_response }),
-      },
-      completed_at: new Date().toISOString(),
-    }).eq("id", task.id);
-  } catch (e: any) {
-    if (payment) await alertPaidFailure("agent", caller_id, e);
-    await db.from("tasks").update({
-      status: "failed",
-      error: payment ? NOT_CHARGED_MESSAGE : e.message,
-      completed_at: new Date().toISOString(),
-    }).eq("id", task.id);
-  }
+        completed_at: new Date().toISOString(),
+      }).eq("id", task.id);
+    } catch (e: any) {
+      if (charged) {
+        await alertCarly(
+          "AEONOS: a paid async task was charged but its result could not be saved",
+          `Caller: ${caller_id}\nTask: ${task.id}\nError: ${String(e?.message ?? e).slice(0, 500)}\n\nThe buyer paid. Resend the result or refund them.`,
+        );
+      } else if (payment) {
+        await alertPaidFailure("agent", caller_id, e);
+      }
+      await db.from("tasks").update({
+        status: "failed",
+        error: charged
+          ? "Your payment went through but the result could not be saved. AEONOS has been alerted and will resend it or refund you."
+          : payment ? NOT_CHARGED_MESSAGE : e.message,
+        completed_at: new Date().toISOString(),
+      }).eq("id", task.id);
+    }
+  })().catch((e: any) => console.error("[aeonos] async task update failed:", e.message)));
 }
 
 // ── Pattern 2: Task Polling ────────────────────────────────────────────────────
@@ -322,7 +330,7 @@ async function handleStream(
     // Headers are already sent on a stream, so the settlement receipt goes in the final event.
     let payment_response: string | undefined;
     if (payment) {
-      const settled = await settlePayment(payment);
+      const settled = await settlePayment(payment, "agent", caller_id);
       if (!settled.ok) {
         send({ status: "failed", charged: false, error: `Payment could not be completed (${settled.reason}). Nothing was charged.` });
         return res.end();
