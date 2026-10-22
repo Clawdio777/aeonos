@@ -9,6 +9,7 @@ Object.assign(process.env, {
   SUPABASE_URL: "http://localhost:1", SUPABASE_SERVICE_KEY: "test-service", ANTHROPIC_API_KEY: "test-anthropic",
   RESEND_API_KEY: "test-resend", NOTIFY_EMAIL: "alerts@example.com",
   TELEGRAM_BOT_TOKEN: "test-telegram", TELEGRAM_CHAT_ID: "123",
+  CDP_API_KEY_NAME: "test-cdp-name", CDP_API_KEY_PRIVATE_KEY: "test-cdp-key", PEMBA_API_KEY: "test-pemba",
 });
 
 const state = {
@@ -21,15 +22,25 @@ const state = {
   telegrams: [] as any[],
   claims: new Set<string>(),
   claimDbDown: false,
+  verifyCalls: 0,
+  /** Settle results to return in order (an Error is thrown) before falling back to settleOk. */
+  settleQueue: [] as any[],
+  /** Promises handed to waitUntil (@vercel/functions is mocked below). */
+  waited: [] as Promise<unknown>[],
 };
 
 // Patch the facilitator on its prototype so both the shared gate's client and api/agent.ts's own client
 // are covered, whichever test file loaded them first.
 const { HTTPFacilitatorClient } = await import("@x402/core/server");
-(HTTPFacilitatorClient.prototype as any).verify = async () =>
-  state.verifyValid ? { isValid: true } : { isValid: false, invalidReason: "invalid_signature" };
+(HTTPFacilitatorClient.prototype as any).verify = async () => {
+  state.verifyCalls++;
+  return state.verifyValid ? { isValid: true } : { isValid: false, invalidReason: "invalid_signature" };
+};
 (HTTPFacilitatorClient.prototype as any).settle = async () => {
   state.settleCalls++;
+  const next = state.settleQueue.shift();
+  if (next instanceof Error) throw next;
+  if (next) return next;
   return state.settleOk ? { success: true, transaction: "0xabc", network: "eip155:8453" } : { success: false, errorReason: "insufficient_funds" };
 };
 
@@ -38,6 +49,7 @@ const runAgent = async () => {
   return { response: "Score 72/100. P1: add FAQ schema.", tool_calls_made: [], tokens_used: 10, costs: {}, cost_usd: 0 };
 };
 mock.module("../src/agent.ts", () => ({ runAgent }));
+mock.module("@vercel/functions", () => ({ waitUntil: (p: Promise<unknown>) => { state.waited.push(p); } }));
 mock.module("../src/agent.js", () => ({ runAgent }));
 
 // Chainable Supabase stub: every call returns itself, awaiting it gives an empty row.
@@ -100,11 +112,17 @@ const paidReq = (query: Record<string, string> = {}, payment = newPayment()) => 
 
 const { default: audit } = await import("../api/audit.ts");
 const { default: agent } = await import("../api/agent.ts");
+const { default: internal } = await import("../api/internal.ts");
 
 beforeEach(() => {
   state.verifyValid = true; state.settleOk = true; state.settleCalls = 0; state.agent = "ok"; state.logFails = false; state.emails = [];
-  state.telegrams = []; state.claimDbDown = false;
+  state.telegrams = []; state.claimDbDown = false; state.verifyCalls = 0; state.settleQueue = []; state.waited = [];
+  process.env.CDP_API_KEY_NAME = "test-cdp-name"; process.env.CDP_API_KEY_PRIVATE_KEY = "test-cdp-key";
 });
+
+// Pending: the transaction was broadcast but not yet confirmed.
+const PENDING = { success: false, errorReason: "settlement_pending", transaction: "0xpending123", network: "eip155:8453" };
+const NOT_CHARGED_WORDING = /not charged|nothing was charged|not taken/i;
 
 describe("x402 routes charge only after the work succeeds", () => {
   test("audit: success settles once and returns the result with the payment receipt", async () => {
@@ -253,7 +271,115 @@ describe("x402 routes charge only after the work succeeds", () => {
     const res = fakeRes();
     await agent(paidReq({ async: "true" }) as any, res);
     expect(res.body.task_id).toBe("task-1");
+    expect(state.waited).toHaveLength(1);
+    await state.waited[0];
     expect(state.settleCalls).toBe(0);
     expect(state.emails).toHaveLength(1);
+  });
+});
+
+describe("pending settlement (settlement_pending)", () => {
+  test("audit: pending then success retries once with the same payment and delivers with the receipt", async () => {
+    state.settleQueue = [PENDING];
+    const res = fakeRes();
+    await audit(paidReq() as any, res);
+    expect(state.settleCalls).toBe(2);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.status).toBe("completed");
+    expect(res.headers["payment-response"]).toBeTruthy();
+    expect(state.emails).toHaveLength(0);
+  });
+
+  test("audit: pending twice delivers the result, alerts Carly with the tx hash, never says 'not charged'", async () => {
+    state.settleQueue = [PENDING, PENDING];
+    const res = fakeRes();
+    await audit(paidReq() as any, res);
+    expect(state.settleCalls).toBe(2);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.status).toBe("completed");
+    expect(JSON.stringify(res.body)).toContain("Score 72/100");
+    expect(JSON.stringify(res.body)).not.toMatch(NOT_CHARGED_WORDING);
+    expect(state.emails).toHaveLength(1);
+    expect(state.emails[0].subject).toContain("pending");
+    expect(state.emails[0].text).toContain("0xpending123");
+    expect(state.telegrams).toHaveLength(1);
+    expect(state.telegrams[0].text).toContain("0xpending123");
+  });
+
+  test("audit: pending reported as a thrown SettleError (non-200) is retried the same way", async () => {
+    const thrown = Object.assign(new Error("settlement_pending"), { name: "SettleError", ...PENDING });
+    state.settleQueue = [thrown, thrown];
+    const res = fakeRes();
+    await audit(paidReq() as any, res);
+    expect(state.settleCalls).toBe(2);
+    expect(res.statusCode).toBe(200);
+    expect(state.emails[0].text).toContain("0xpending123");
+  });
+
+  test("agent (async): pending twice completes the task with the result, never 'not charged'", async () => {
+    state.settleQueue = [PENDING, PENDING];
+    const res = fakeRes();
+    await agent(paidReq({ async: "true" }) as any, res);
+    await Promise.all(state.waited);
+    expect(state.settleCalls).toBe(2);
+    expect(state.emails).toHaveLength(1);
+    expect(state.emails[0].text).toContain("0xpending123");
+    expect(state.emails[0].text).not.toMatch(NOT_CHARGED_WORDING);
+  });
+
+  test("agent (stream): pending twice ends with the completed result, never 'not charged'", async () => {
+    state.settleQueue = [PENDING, PENDING];
+    const res = fakeRes();
+    await agent(paidReq({ stream: "true" }) as any, res);
+    const last = res.events.at(-1);
+    expect(last.status).toBe("completed");
+    expect(JSON.stringify(res.events)).not.toMatch(NOT_CHARGED_WORDING);
+  });
+});
+
+describe("background work after the response is kept alive with waitUntil", () => {
+  test("agent (async): the run, settlement and task update are handed to waitUntil", async () => {
+    const res = fakeRes();
+    await agent(paidReq({ async: "true" }) as any, res);
+    expect(res.body).toEqual({ task_id: "task-1", status: "working" });
+    expect(state.waited).toHaveLength(1);
+    expect(state.waited[0]).toBeInstanceOf(Promise);
+    await state.waited[0];
+    expect(state.settleCalls).toBe(1);
+  });
+
+  test("internal: the background run is handed to waitUntil", async () => {
+    const res = fakeRes();
+    await internal({ method: "POST", headers: { authorization: "Bearer test-pemba" }, body: { query: "Audit acme.com" }, query: {} } as any, res);
+    expect(res.body).toEqual({ task_id: "task-1", status: "working" });
+    expect(state.waited).toHaveLength(1);
+    await state.waited[0];
+  });
+});
+
+describe("payments fail closed without the CDP facilitator keys", () => {
+  for (const missing of ["CDP_API_KEY_NAME", "CDP_API_KEY_PRIVATE_KEY"]) {
+    test(`audit: missing ${missing} returns 500 'payments not configured' and calls no facilitator`, async () => {
+      delete process.env[missing];
+      state.agent = "throw"; // would alert if the work ran
+      const res = fakeRes();
+      await audit(paidReq() as any, res);
+      expect(res.statusCode).toBe(500);
+      expect(res.body.error).toBe("payments not configured");
+      expect(state.verifyCalls).toBe(0);
+      expect(state.settleCalls).toBe(0);
+      expect(state.emails).toHaveLength(0);
+    });
+  }
+
+  test("agent: missing CDP keys returns 500 'payments not configured' and calls no facilitator", async () => {
+    delete process.env.CDP_API_KEY_NAME;
+    delete process.env.CDP_API_KEY_PRIVATE_KEY;
+    const res = fakeRes();
+    await agent(paidReq() as any, res);
+    expect(res.statusCode).toBe(500);
+    expect(res.body.error).toBe("payments not configured");
+    expect(state.verifyCalls).toBe(0);
+    expect(state.settleCalls).toBe(0);
   });
 });
