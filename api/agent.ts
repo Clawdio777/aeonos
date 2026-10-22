@@ -21,7 +21,7 @@ import type { PaymentRequired, PaymentPayload, PaymentRequirements } from "@x402
 import { x402Version as X402_VERSION } from "@x402/core";
 import { declareDiscoveryExtension } from "@x402/extensions";
 import { runAgent } from "../src/agent.js";
-import { withPlaceholderNotice, DISCOVERY_CALLER_ID_EXAMPLE, withBuilderCode, settlePayment, alertPaidFailure, claimPayment, NOT_CHARGED_MESSAGE, getFacilitatorClient, sendPaymentsNotConfigured, type PendingPayment } from "./_x402-gate.js";
+import { withPlaceholderNotice, DISCOVERY_CALLER_ID_EXAMPLE, withBuilderCode, settlePayment, alertPaidFailure, alertCarly, claimPayment, NOT_CHARGED_MESSAGE, getFacilitatorClient, sendPaymentsNotConfigured, type PendingPayment } from "./_x402-gate.js";
 import agentCard from "../public/.well-known/agent.json" with { type: "json" };
 
 const PRICE_PER_QUERY_USDC = 0.05;
@@ -225,6 +225,8 @@ async function handleAsync(
   // Run the agent after the response. waitUntil keeps the function alive until the run, settlement and
   // task update finish; without it Vercel may cut the work off once the response has been sent.
   waitUntil((async () => {
+    // Once settled, the buyer has paid: a later failure must never be reported as "not charged" (#43's rule).
+    let charged = false;
     try {
       const result = await runAgent({ query, caller_id, citationSamples: 1 });
       let payment_response: string | undefined;
@@ -239,6 +241,7 @@ async function handleAsync(
           return;
         }
         payment_response = settled.paymentResponse;
+        charged = true;
       }
       await logQuery(caller_id, query, result, payment?.header).catch((e) => console.error("[aeonos] log write failed:", e.message));
       await db.from("tasks").update({
@@ -255,10 +258,19 @@ async function handleAsync(
         completed_at: new Date().toISOString(),
       }).eq("id", task.id);
     } catch (e: any) {
-      if (payment) await alertPaidFailure("agent", caller_id, e);
+      if (charged) {
+        await alertCarly(
+          "AEONOS: a paid async task was charged but its result could not be saved",
+          `Caller: ${caller_id}\nTask: ${task.id}\nError: ${String(e?.message ?? e).slice(0, 500)}\n\nThe buyer paid. Resend the result or refund them.`,
+        );
+      } else if (payment) {
+        await alertPaidFailure("agent", caller_id, e);
+      }
       await db.from("tasks").update({
         status: "failed",
-        error: payment ? NOT_CHARGED_MESSAGE : e.message,
+        error: charged
+          ? "Your payment went through but the result could not be saved. AEONOS has been alerted and will resend it or refund you."
+          : payment ? NOT_CHARGED_MESSAGE : e.message,
         completed_at: new Date().toISOString(),
       }).eq("id", task.id);
     }

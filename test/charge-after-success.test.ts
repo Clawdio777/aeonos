@@ -18,6 +18,8 @@ const state = {
   settleCalls: 0,
   agent: "ok" as "ok" | "throw",
   logFails: false,
+  /** Database starts failing the moment settlement succeeds (charged, then the save fails). */
+  dbFailsAfterSettle: false,
   emails: [] as any[],
   telegrams: [] as any[],
   claims: new Set<string>(),
@@ -38,6 +40,7 @@ const { HTTPFacilitatorClient } = await import("@x402/core/server");
 };
 (HTTPFacilitatorClient.prototype as any).settle = async () => {
   state.settleCalls++;
+  if (state.dbFailsAfterSettle) state.logFails = true;
   const next = state.settleQueue.shift();
   if (next instanceof Error) throw next;
   if (next) return next;
@@ -101,8 +104,16 @@ function fakeRes() {
 
 // Each call gets its own signed payment unless one is passed in (to test reuse).
 let nonce = 0;
-const newPayment = () =>
-  Buffer.from(JSON.stringify({ x402Version: 2, payload: { signature: `0xsig${++nonce}` } })).toString("base64");
+// Shaped like a real EIP-3009 payment: payer + one-time nonce inside `authorization`.
+const paymentObj = (n: number, from = "0xBuyer000000000000000000000000000000000001") => ({
+  x402Version: 2,
+  payload: {
+    signature: `0xsig${n}`,
+    authorization: { from, to: "0x400d65bb174c546ed92f5d61ce21fbde96b8bacc", value: "2500000", validAfter: "0", validBefore: "9999999999", nonce: `0x${n.toString(16).padStart(64, "0")}` },
+  },
+});
+const encode = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
+const newPayment = () => encode(paymentObj(++nonce));
 const paidReq = (query: Record<string, string> = {}, payment = newPayment()) => ({
   method: "POST",
   headers: { "payment-signature": payment, "content-type": "application/json" },
@@ -115,7 +126,7 @@ const { default: agent } = await import("../api/agent.ts");
 const { default: internal } = await import("../api/internal.ts");
 
 beforeEach(() => {
-  state.verifyValid = true; state.settleOk = true; state.settleCalls = 0; state.agent = "ok"; state.logFails = false; state.emails = [];
+  state.verifyValid = true; state.settleOk = true; state.settleCalls = 0; state.agent = "ok"; state.logFails = false; state.dbFailsAfterSettle = false; state.emails = [];
   state.telegrams = []; state.claimDbDown = false; state.verifyCalls = 0; state.settleQueue = []; state.waited = [];
   process.env.CDP_API_KEY_NAME = "test-cdp-name"; process.env.CDP_API_KEY_PRIVATE_KEY = "test-cdp-key";
 });
@@ -180,6 +191,27 @@ describe("x402 routes charge only after the work succeeds", () => {
     expect(second.body.error).toContain("already been used");
     expect(state.settleCalls).toBe(1);
     expect(state.emails).toHaveLength(0);
+  });
+
+  test("audit: re-encoding the same payment (reordered JSON, different case) can't buy the work twice", async () => {
+    const n = ++nonce;
+    const original = paymentObj(n);
+    await audit(paidReq({}, encode(original)) as any, fakeRes());
+    const a = original.payload.authorization;
+    const reordered = { payload: { authorization: { nonce: a.nonce.toUpperCase().replace("0X", "0x"), validBefore: a.validBefore, validAfter: a.validAfter, value: a.value, to: a.to, from: a.from.toLowerCase() }, signature: original.payload.signature }, x402Version: 2 };
+    state.agent = "throw";
+    const second = fakeRes();
+    await audit(paidReq({}, encode(reordered)) as any, second);
+    expect(second.statusCode).toBe(409);
+    expect(state.settleCalls).toBe(1);
+  });
+
+  test("audit: a different nonce from the same payer is a new payment", async () => {
+    const res1 = fakeRes(), res2 = fakeRes();
+    await audit(paidReq({}, newPayment()) as any, res1);
+    await audit(paidReq({}, newPayment()) as any, res2);
+    expect([res1.statusCode, res2.statusCode]).toEqual([200, 200]);
+    expect(state.settleCalls).toBe(2);
   });
 
   test("audit: two parallel requests with one payment run the work once", async () => {
@@ -264,6 +296,16 @@ describe("x402 routes charge only after the work succeeds", () => {
     expect(last.status).toBe("completed");
     expect(last.payment_response).toBeTruthy();
     expect(state.settleCalls).toBe(1);
+  });
+
+  test("agent (async): charged, then the result can't be saved: Carly is told it was CHARGED, never 'not charged'", async () => {
+    state.dbFailsAfterSettle = true;
+    await agent(paidReq({ async: "true" }) as any, fakeRes());
+    await Promise.all(state.waited);
+    expect(state.settleCalls).toBe(1);
+    expect(state.emails).toHaveLength(1);
+    expect(state.emails[0].subject).toContain("charged but");
+    expect(state.emails[0].subject + state.emails[0].text).not.toMatch(NOT_CHARGED_WORDING);
   });
 
   test("agent (async): failure is not charged", async () => {
