@@ -21,6 +21,7 @@ import { execFileSync, execSync, spawn } from "child_process";
 import { writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import { findTokenBalance } from "./sweep-balance.mjs";
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 
@@ -310,14 +311,9 @@ async function sweepIfNeeded() {
       "wallet", "balance", "--chain-id", String(CHAIN_ID),
     ], { encoding: "utf8", timeout: 30_000, env: acpEnv() });
 
-    // acp CLI (10/2026) prints tab-separated rows: NETWORK  TOKEN  NAME  BALANCE  USD  CONTRACT.
-    // Match on the real USDC contract, never the symbol: the wallet holds look-alike "USDC" spam tokens.
-    const row = balOut.split("\n").map(l => l.split("\t").map(c => c.trim()))
-      .find(c => c.length >= 6 && c[5].toLowerCase() === USDC_CONTRACT.toLowerCase());
-    if (!row) { log("[Sweep] Could not find the USDC row (contract " + USDC_CONTRACT + ") in acp wallet balance"); return; }
-
-    const balance = parseFloat(row[3]);
-    if (!Number.isFinite(balance)) { log("[Sweep] USDC balance not a number: " + row[3]); return; }
+    const balance = findTokenBalance(balOut, USDC_CONTRACT);
+    if (balance === null) { log("[Sweep] Could not find the USDC row (contract " + USDC_CONTRACT + ") in acp wallet balance"); return; }
+    if (!Number.isFinite(balance)) { log("[Sweep] USDC balance not a number"); return; }
     if (balance < SWEEP_THRESHOLD) {
       log(`[Sweep] ${balance} USDC — below threshold, skipping`);
       return;
