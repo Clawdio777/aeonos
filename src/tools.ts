@@ -470,7 +470,7 @@ export const CITATION_RETRY = {
   attempts: 3,
   /**
    * Tries per DataForSEO SERP fetch. Google answers DataForSEO's scrape with 40101 at random, after DataForSEO's own
-   * retries: on 12/10/2026, 6 of 10 a pilot clinic (location 2036) fetches failed even one at a time, and 2 of 12
+   * retries: on 12/10/2026, 6 of 10 fetches for an Australian clinic (location 2036) failed even one at a time, and 2 of 12
    * for pemba.ai (2840). A failed fetch costs US$0.002, so more tries are cheap.
    */
   serpAttempts: 6,

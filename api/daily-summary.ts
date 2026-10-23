@@ -13,6 +13,7 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
+import { bearerMatches } from "./_bearer.js";
 
 const db = createClient(
   process.env.SUPABASE_URL!,
@@ -21,8 +22,7 @@ const db = createClient(
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Auth check — Vercel cron sends Authorization: Bearer <CRON_SECRET>
-  const auth = req.headers.authorization;
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!bearerMatches(req.headers.authorization, process.env.CRON_SECRET)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
