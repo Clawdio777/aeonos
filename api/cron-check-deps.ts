@@ -9,8 +9,8 @@
  */
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { bearerMatches } from "./_bearer.js";
 
-const CRON_SECRET = process.env.CRON_SECRET || "aeonos-cron-2026";
 const NOTIFY_EMAIL = process.env.NOTIFY_EMAIL || "clawdio777@gmail.com";
 
 // Pinned versions from package.json at time of last skill update
@@ -51,8 +51,7 @@ function bumpType(pinned: string, latest: string): "major" | "minor" | "patch" |
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Auth check
-  const auth = req.headers["authorization"];
-  if (auth !== `Bearer ${CRON_SECRET}`) {
+  if (!bearerMatches(req.headers["authorization"], process.env.CRON_SECRET)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 

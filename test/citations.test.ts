@@ -498,7 +498,7 @@ describe("6. Retries, per-provider limits and the run time budget (12/10/2026)",
 
     test("Pemba's real failure: 8 of 15 Perplexity calls rate limited in a chunk, all recovered", async () => {
       state.fail = { pplx: { count: 8, kind: "429" } };
-      const r = await tools.checkCitationsRaw("medicinetraditions.com", Q6.slice(0, 5), 3);
+      const r = await tools.checkCitationsRaw("example-clinic.com", Q6.slice(0, 5), 3);
       expect(r.perplexity).toMatchObject({ expectedSamples: 15, gotSamples: 15, errors: [] });
       expect(r.valid).toBe(true);
     });

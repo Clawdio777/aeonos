@@ -148,7 +148,7 @@ async function main() {
   console.log(COLOURS.bold("\n── Query 4 (paid tier) ──"));
   try {
     const answer = await queryAgent(
-      "Run an AEO audit on sherbournehouse.com.au and give me the top 3 improvements.",
+      "Run an AEO audit on pemba.ai and give me the top 3 improvements.",
       walletClient
     );
     if (answer) {
