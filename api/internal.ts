@@ -13,6 +13,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { waitUntil } from "@vercel/functions";
 import { runAgent } from "../src/agent.js";
+import { bearerMatches } from "./_bearer.js";
 
 const db = createClient(
   process.env.SUPABASE_URL!,
@@ -26,9 +27,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   // Auth
-  const auth = req.headers.authorization || "";
-  const token = auth.replace("Bearer ", "").trim();
-  if (token !== (process.env.PEMBA_API_KEY || "").trim()) {
+  if (!bearerMatches(req.headers.authorization, process.env.PEMBA_API_KEY)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 

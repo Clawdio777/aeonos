@@ -6,3 +6,6 @@ dist/
 .vercel
 supabase/.temp/
 .scratch/
+
+# Pemba playbook: private, not in this public repo (23/10/2026). Copy in ~/Backups/aeonos-seed/
+seed/seed.json

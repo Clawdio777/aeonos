@@ -8,10 +8,23 @@
  *   SUPABASE_URL=
  *   SUPABASE_SERVICE_KEY=
  *   OPENAI_API_KEY=   (optional — set to generate embeddings now, or run embed step later)
+ *   SEED_FILE=        (optional — path to the knowledge JSON; defaults to seed/seed.json)
+ *
+ * The knowledge file is Pemba's playbook, so it is kept out of this public repo (23/10/2026):
+ * seed/seed.json is git-ignored; the private copy is ~/Backups/aeonos-seed/ on the Mac.
  */
 
+import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import seedData from "./seed.json" with { type: "json" };
+
+const seedData = JSON.parse(readFileSync(process.env.SEED_FILE || new URL("./seed.json", import.meta.url), "utf8"));
+
+// Writes to the live knowledge table, and bun loads .env on its own, so a bare run must never write
+// (a check run on 23/10/2026 re-seeded production twice). Dry run unless --apply is given.
+if (!process.argv.includes("--apply")) {
+  console.log(`Dry run: ${seedData.entries.length} entries read. Nothing written. Re-run with --apply to upsert them.`);
+  process.exit(0);
+}
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY!;

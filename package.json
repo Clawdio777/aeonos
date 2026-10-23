@@ -39,7 +39,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "vercel dev",
-    "seed": "bun run seed/seed.ts",
+    "seed": "bun run seed/seed.ts --apply",
     "deploy": "vercel --prod",
     "test": "bun test",
     "test:norg": "bun run src/tools.ts"
