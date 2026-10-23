@@ -11,6 +11,7 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
+import { waitUntil } from "@vercel/functions";
 import { runAgent } from "../src/agent.js";
 
 const db = createClient(
@@ -70,26 +71,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Return task_id immediately
   res.json({ task_id: task.id, status: "working" });
 
-  // Run agent in background (Vercel continues executing after response)
-  try {
-    const result = await runAgent({ query, caller_id });
-    await db.from("tasks").update({
-      status: "completed",
-      result: {
-        artifact: {
-          parts: [{ type: "text", text: result.response }],
-          index: 0,
+  // Run the agent after the response. waitUntil keeps the function alive until it finishes; without it
+  // Vercel may cut the work off once the response has been sent.
+  waitUntil((async () => {
+    try {
+      const result = await runAgent({ query, caller_id });
+      await db.from("tasks").update({
+        status: "completed",
+        result: {
+          artifact: {
+            parts: [{ type: "text", text: result.response }],
+            index: 0,
+          },
+          tool_calls: result.tool_calls_made,
+          tokens: result.tokens_used,
         },
-        tool_calls: result.tool_calls_made,
-        tokens: result.tokens_used,
-      },
-      completed_at: new Date().toISOString(),
-    }).eq("id", task.id);
-  } catch (e: any) {
-    await db.from("tasks").update({
-      status: "failed",
-      error: e.message,
-      completed_at: new Date().toISOString(),
-    }).eq("id", task.id);
-  }
+        completed_at: new Date().toISOString(),
+      }).eq("id", task.id);
+    } catch (e: any) {
+      await db.from("tasks").update({
+        status: "failed",
+        error: e.message,
+        completed_at: new Date().toISOString(),
+      }).eq("id", task.id);
+    }
+  })().catch((e: any) => console.error("[aeonos/internal] task update failed:", e.message)));
 }

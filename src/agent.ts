@@ -13,7 +13,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { runWithCosts, addCost, anthropicCost, totalCost } from "./costs.js";
 import { tools, executeTool } from "./tools.js";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+// maxRetries 4 (SDK default 2): rides out short overloads/5xx with backoff before a paid run is failed.
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY!, maxRetries: 4 });
 
 // ── Live knowledge injection ────────────────────────────────────────────────
 // Fetches the latest AEO/GEO/SEO intelligence from Sailor's knowledge base
@@ -155,8 +156,10 @@ async function runAgentInner(input: AgentQuery): Promise<Omit<AgentResponse, "co
     // Accept both clean end_turn and max_tokens (partial but still useful for long audits).
     if (response.stop_reason === "end_turn" || response.stop_reason === "max_tokens") {
       const textBlock = response.content.find((b) => b.type === "text");
+      // An empty answer is a failed run: throw so the paid routes don't charge for it.
+      if (textBlock?.type !== "text" || !textBlock.text.trim()) throw new Error("No response produced");
       return {
-        response: textBlock?.type === "text" ? textBlock.text : "No response produced.",
+        response: textBlock.text,
         tool_calls_made: toolCallsMade,
         tokens_used: totalTokens,
       };
@@ -197,9 +200,5 @@ async function runAgentInner(input: AgentQuery): Promise<Omit<AgentResponse, "co
     break;
   }
 
-  return {
-    response: "Agent completed without a final response.",
-    tool_calls_made: toolCallsMade,
-    tokens_used: totalTokens,
-  };
+  throw new Error("Agent completed without a final response");
 }

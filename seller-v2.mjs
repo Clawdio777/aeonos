@@ -18,9 +18,10 @@
 
 import { createInterface } from "readline";
 import { execFileSync, execSync, spawn } from "child_process";
-import { writeFileSync, mkdirSync } from "fs";
+import { writeFileSync, mkdirSync, readFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import { findTokenBalance } from "./sweep-balance.mjs";
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 
@@ -58,11 +59,13 @@ const OFFERING_PROMPTS = {
     `Generate a structured AEO progress report for: ${q}. Score each of the Four Layers (Technical/SXO, Content/AIO, Authority/GEO, Citation/AEO) from 0–100 with specific reasons. Identify the top 3 things working, the top 3 things broken, and give exactly 3 priority actions ranked by impact. Use the progress report format — not a strategy overview.`,
 };
 
-// Sweep: split USDC earnings — top up Pemba buyer wallet first, rest to personal wallet
-const SWEEP_DEST      = "0x282d873b3737144b45c507320c12f22edfd51fe3"; // personal/business wallet
+// Sweep: ALL USDC earnings go to the Pemba buyer wallet, which pays for AEONOS calls, so AEONOS funds its own
+// usage. Carly moves any excess to her own wallet by hand (her decision, 10/10/2026; was: top Pemba up to $10,
+// rest to the personal wallet 0x282d873b3737144b45c507320c12f22edfd51fe3).
 const PEMBA_WALLET    = "0x1E45B323B94Bfe39eac03E27431A6866193AcC1B"; // Pemba buyer wallet (pays for AEONOS calls)
-const PEMBA_TARGET    = 10.00; // USDC to keep in Pemba wallet (~5 wks of audits: 4×$1.50 + 1×$2.50)
 const SWEEP_THRESHOLD = 10.00; // USDC — only sweep if AEONOS balance ≥ this
+const SWEEP_FEE_BUFFER = 1.00; // USDC left behind to pay the wallet's own network fee
+const SWEEP_EVERY_MS  = 6 * 60 * 60 * 1000; // also sweep on a timer: most earnings now arrive outside ACP jobs
 const USDC_CONTRACT   = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"; // USDC on Base
 const BASE_RPC        = "https://mainnet.base.org";
 
@@ -173,40 +176,7 @@ async function handleEvent(raw) {
     const query = promptFn(rawQuery);
 
     jobLog(jobId, `Offering: ${offeringName} | Calling AEONOS API. Query:`, query.slice(0, 100));
-    try {
-      const res = await fetch(AEONOS_API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, caller_id }),
-        signal: AbortSignal.timeout(AEONOS_TIMEOUT_MS),
-      });
-
-      if (!res.ok) {
-        throw new Error(`AEONOS API ${res.status}: ${await res.text().then(t => t.slice(0, 200))}`);
-      }
-
-      const data = await res.json();
-      const deliverable = data.artifact?.parts?.[0]?.text
-        ?? data.response
-        ?? JSON.stringify(data);
-
-      jobLog(jobId, `AEONOS response received (${deliverable.length} chars). Submitting...`);
-
-      execFileSync(ACP_BIN, [
-        "provider", "submit",
-        "--job-id",     jobId,
-        "--deliverable", deliverable,
-        "--chain-id",   String(job.chainId),
-      ], { encoding: "utf8", timeout: ACP_TIMEOUT_MS, env: acpEnv() });
-
-      jobLog(jobId, "Submitted ✓");
-      jobs.delete(jobId);
-      sweepIfNeeded().catch(e => log("[Sweep] unhandled:", e.message));
-
-    } catch (e) {
-      jobLog(jobId, "Submit ERROR:", e.message.slice(0, 300));
-      job.submitted = false; // allow retry
-    }
+    await deliverWithRetry(jobId, job, query, caller_id);
   }
 
   // ── Clean up completed/rejected/expired jobs ───────────────────────────────
@@ -214,6 +184,92 @@ async function handleEvent(raw) {
     jobLog(jobId, `Job ${status} — cleaning up`);
     jobs.delete(jobId);
   }
+}
+
+// ── Delivery fail-safe (22/10/2026) ───────────────────────────────────────────
+// Before: a failed run waited for another job event to retry, and often none came, so the buyer sat on a
+// funded job until it expired. Now the seller retries on its own; if every try fails it tells the buyer
+// in the job room and pings Carly. A provider can't reject on ACP, so the buyer's escrow is refunded
+// automatically when the job expires and they are never charged for undelivered work.
+const RETRY_DELAYS_MS = [0, 60_000, 180_000];
+
+async function deliverWithRetry(jobId, job, query, caller_id) {
+  let lastError = "";
+  for (const [i, delay] of RETRY_DELAYS_MS.entries()) {
+    if (delay) await new Promise(r => setTimeout(r, delay));
+    try {
+      await deliverOnce(jobId, job, query, caller_id);
+      return;
+    } catch (e) {
+      lastError = e.message.slice(0, 300);
+      jobLog(jobId, `Submit ERROR (try ${i + 1}/${RETRY_DELAYS_MS.length}):`, lastError);
+    }
+  }
+  jobLog(jobId, "All delivery tries failed; telling the buyer and Carly");
+  try {
+    execFileSync(ACP_BIN, [
+      "message", "send",
+      "--job-id",   jobId,
+      "--chain-id", String(job.chainId),
+      "--content",  "Sorry, AEONOS could not complete this job. Your payment stays in escrow and is refunded automatically when the job expires; you will not be charged. Please try again later.",
+    ], { encoding: "utf8", timeout: ACP_TIMEOUT_MS, env: acpEnv() });
+  } catch (e) {
+    jobLog(jobId, "Buyer message failed:", e.message.slice(0, 200));
+  }
+  try {
+    execFileSync(`${process.env.HOME}/bin/ping-carly`,
+      [`⚠️ AEONOS (Virtuals) job ${jobId} failed after ${RETRY_DELAYS_MS.length} tries. Buyer told; escrow refunds them on expiry. Last error: ${lastError.slice(0, 200)}`],
+      { timeout: 15_000 });
+  } catch (e) {
+    jobLog(jobId, "Telegram ping failed:", e.message.slice(0, 200));
+  }
+}
+
+// Virtuals buyers pay through ACP escrow, so the seller calls AEONOS with the internal key (PayGated bypass in
+// api/agent.ts). Without it every call got 402 and no Virtuals job could ever be delivered (found 22/10/2026).
+// Read at call time from the secrets store so a rotation needs no seller restart. Never logged.
+function internalKey() {
+  if (process.env.AEONOS_INTERNAL_API_KEY) return process.env.AEONOS_INTERNAL_API_KEY.trim();
+  try {
+    const line = readFileSync(`${process.env.HOME}/.config/codi/secrets.env`, "utf8")
+      .split("\n").find(l => /^(export\s+)?AEONOS_INTERNAL_API_KEY=/.test(l));
+    return line ? line.split("=").slice(1).join("=").trim().replace(/^["']|["']$/g, "") : "";
+  } catch {
+    return "";
+  }
+}
+
+async function deliverOnce(jobId, job, query, caller_id) {
+  const key = internalKey();
+  if (!key) throw new Error("AEONOS internal key not found (AEONOS_INTERNAL_API_KEY)");
+  const res = await fetch(AEONOS_API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-internal-key": key },
+    body: JSON.stringify({ query, caller_id }),
+    signal: AbortSignal.timeout(AEONOS_TIMEOUT_MS),
+  });
+
+  if (!res.ok) {
+    throw new Error(`AEONOS API ${res.status}: ${await res.text().then(t => t.slice(0, 200))}`);
+  }
+
+  const data = await res.json();
+  const deliverable = data.artifact?.parts?.[0]?.text
+    ?? data.response
+    ?? JSON.stringify(data);
+
+  jobLog(jobId, `AEONOS response received (${deliverable.length} chars). Submitting...`);
+
+  execFileSync(ACP_BIN, [
+    "provider", "submit",
+    "--job-id",     jobId,
+    "--deliverable", deliverable,
+    "--chain-id",   String(job.chainId),
+  ], { encoding: "utf8", timeout: ACP_TIMEOUT_MS, env: acpEnv() });
+
+  jobLog(jobId, "Submitted ✓");
+  jobs.delete(jobId);
+  sweepIfNeeded().catch(e => log("[Sweep] unhandled:", e.message));
 }
 
 // ── Fee resolution ─────────────────────────────────────────────────────────────
@@ -308,40 +364,25 @@ async function sweepIfNeeded() {
       "wallet", "balance", "--chain-id", String(CHAIN_ID),
     ], { encoding: "utf8", timeout: 30_000, env: acpEnv() });
 
-    // Parse USDC row: "USDC  USD Coin  1.23  $1.23  0x833..."
-    const match = balOut.match(/^USDC\s+\S+\s+([\d.]+)/m);
-    if (!match) { log("[Sweep] Could not parse USDC balance"); return; }
-
-    const balance = parseFloat(match[1]);
+    const balance = findTokenBalance(balOut, USDC_CONTRACT);
+    if (balance === null) { log("[Sweep] Could not find the USDC row (contract " + USDC_CONTRACT + ") in acp wallet balance"); return; }
+    if (!Number.isFinite(balance)) { log("[Sweep] USDC balance not a number"); return; }
     if (balance < SWEEP_THRESHOLD) {
       log(`[Sweep] ${balance} USDC — below threshold, skipping`);
       return;
     }
 
-    log(`[Sweep] ${balance} USDC ≥ ${SWEEP_THRESHOLD} — calculating split`);
-
-    // Check how much Pemba wallet currently has, top it up to PEMBA_TARGET
-    const pembaBalance = await getUSDCBalance(PEMBA_WALLET);
-    const pembaTopup   = Math.max(0, parseFloat((PEMBA_TARGET - pembaBalance).toFixed(6)));
-    const toPersonal   = parseFloat(Math.max(0, balance - pembaTopup).toFixed(6));
-
-    log(`[Sweep] Pemba wallet has ${pembaBalance} USDC — topup ${pembaTopup}, personal ${toPersonal}`);
-
-    // 1. Top up Pemba wallet if it needs it
-    if (pembaTopup >= 0.01) {
-      const tx1 = sendUSDC(PEMBA_WALLET, pembaTopup);
-      log(`[Sweep] Pemba top-up ${pembaTopup} USDC. TX: ${tx1}`);
-    } else {
-      log(`[Sweep] Pemba wallet already funded (${pembaBalance} USDC) — skipping top-up`);
-    }
-
-    // 2. Send remainder to personal/business wallet
-    if (toPersonal >= 0.01) {
-      const tx2 = sendUSDC(SWEEP_DEST, toPersonal);
-      log(`[Sweep] Personal sweep ${toPersonal} USDC. TX: ${tx2}`);
-    } else {
-      log(`[Sweep] Nothing left for personal wallet after Pemba top-up`);
-    }
+    // Keep a buffer: this smart wallet pays its network fee from its own balance, so sending 100% reverted
+    // (UserOperation success=false on 10/10/2026, tx 0x4284276d…) while the bundle tx itself "succeeded".
+    const amount = parseFloat((balance - SWEEP_FEE_BUFFER).toFixed(6));
+    if (amount < 0.01) { log(`[Sweep] ${balance} USDC — nothing to send after the ${SWEEP_FEE_BUFFER} fee buffer`); return; }
+    const before = await getUSDCBalance(PEMBA_WALLET);
+    const tx = sendUSDC(PEMBA_WALLET, amount);
+    // Only report success once the Pemba wallet actually went up.
+    let after = before;
+    for (let i = 0; i < 12 && after < before + amount - 0.001; i++) { await new Promise(r => setTimeout(r, 10_000)); after = await getUSDCBalance(PEMBA_WALLET); }
+    if (after >= before + amount - 0.001) log(`[Sweep] OK ${amount} USDC → Pemba wallet ${PEMBA_WALLET} (now ${after}). TX: ${tx}`);
+    else log(`[Sweep] ERROR: sent ${amount} USDC but the Pemba wallet did not go up (still ${after}); the transfer probably reverted. TX: ${tx}`);
   } catch (e) {
     log("[Sweep] ERROR:", e.message.slice(0, 200));
   }
@@ -402,3 +443,7 @@ process.on("unhandledRejection", (e) => log("unhandledRejection:", String(e)));
 
 log("AEONOS seller-v2 started. Logs:", LOG_DIR);
 startEventStream();
+
+// Timed sweep (10/10/2026): x402/PayGate earnings never trigger the post-job sweep, so US$36 sat unswept.
+setTimeout(() => sweepIfNeeded().catch(e => log("[Sweep] unhandled:", e.message)), 60_000);
+setInterval(() => sweepIfNeeded().catch(e => log("[Sweep] unhandled:", e.message)), SWEEP_EVERY_MS);

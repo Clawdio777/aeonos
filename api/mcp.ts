@@ -4,19 +4,14 @@
  * Implements the MCP protocol over HTTP for Smithery and other MCP clients.
  * Smithery passes user config as X-Smithery-Config-* headers.
  *
- * User config required:
- *   AEONOS_PRIVATE_KEY — Base wallet private key with USDC for x402 payments
+ * Paid through PayGate credits (pg_token). The hosted endpoint never accepts a wallet private key
+ * (removed 22/10/2026: the x402 docs keep the buyer's key on the buyer's machine). Wallet (USDC) buyers use
+ * the local stdio server `npx aeonos-mcp` (mcp-server.mjs), which signs payments on their own machine.
  */
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createWalletClient, createPublicClient, http as viemHttp } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { base } from "viem/chains";
-import { x402Client, wrapFetchWithPayment } from "@x402/fetch";
-import { ExactEvmScheme, toClientEvmSigner } from "@x402/evm";
 import { runAgent } from "../src/agent.js";
 
-const BASE_URL = "https://aeonos.basechainlabs.com";
 
 const OUTPUT_SCHEMA = {
   type: "object",
@@ -152,41 +147,9 @@ const CHECK_CREDITS_TOOL = {
   },
 };
 
-function buildX402Fetch(privateKey: string) {
-  const account      = privateKeyToAccount(privateKey as `0x${string}`);
-  const transport    = viemHttp("https://mainnet.base.org");
-  const walletClient = createWalletClient({ account, chain: base, transport });
-  const publicClient = createPublicClient({ chain: base, transport });
-  const signer       = toClientEvmSigner(
-    { address: account.address, signTypedData: (m: any) => walletClient.signTypedData(m), readContract: (a: any) => publicClient.readContract(a) },
-    publicClient
-  );
-  const evmScheme = new ExactEvmScheme(signer);
-  const client    = x402Client.fromConfig({ schemes: [{ x402Version: 2, network: "eip155:8453", client: evmScheme }] });
-  return wrapFetchWithPayment(fetch, client);
-}
-
-async function callAeonos(
-  path: string, query: string, callerId: string,
-  auth: { privateKey?: string; internalKey?: string }
-): Promise<string> {
-  const paidFetch = auth.internalKey
-    ? (url: RequestInfo | URL, init?: RequestInit) =>
-        fetch(url, { ...init, headers: { ...(init?.headers as Record<string, string> ?? {}), "x-internal-key": auth.internalKey! } })
-    : buildX402Fetch(auth.privateKey!);
-  const res = await paidFetch(`${BASE_URL}${path}`, {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ query, caller_id: callerId || "mcp-user" }),
-  });
-  if (!res.ok) throw new Error(`AEONOS error: HTTP ${res.status}: ${await res.text()}`);
-  const data = await res.json() as any;
-  return data?.artifact?.parts?.[0]?.text ?? JSON.stringify(data);
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Smithery-Config-Aeonos-Private-Key, X-Wallet-Key");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
 
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -195,15 +158,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // PayGated auth — token embedded in PAYGATE_REMOTE_URL query string (PayGated preserves ?pg_token=... when proxying)
   const pgToken    = req.query.pg_token as string | undefined;
   const isPaygated = !!pgToken && !!process.env.PAYGATE_AUTH_SECRET && pgToken === process.env.PAYGATE_AUTH_SECRET;
-  const internalKey  = isPaygated ? process.env.INTERNAL_API_KEY : undefined;
 
-  // Get wallet key and optional caller ID from Smithery config headers
-  const privateKey = isPaygated ? undefined : (
-    req.headers["x-smithery-config-aeonos-private-key"] ??
-    req.headers["x-wallet-key"] ??
-    process.env.MCP_DEMO_PRIVATE_KEY
-  ) as string | undefined;
-
+  // Optional caller ID from Smithery config headers
   const defaultCallerId = (
     req.headers["x-smithery-config-caller-id"] ??
     req.headers["x-caller-id"]
@@ -233,7 +189,7 @@ Tool selection guide:
 
 Always pass a consistent caller_id (e.g. the user's domain or your agent ID) to activate persistent memory. AEONOS will remember prior audits and context across the session.
 
-Payments are handled automatically via x402 (USDC on Base). Each call deducts from the configured wallet.`,
+Calls on this hosted endpoint are paid from AEONOS credits (card). To pay per call in USDC on Base, run the local server (npx aeonos-mcp), which signs with a wallet that stays on your machine.`,
       },
     });
   }
@@ -368,13 +324,13 @@ Payments are handled automatically via x402 (USDC on Base). Each call deducts fr
       return res.json({ jsonrpc: "2.0", id, error: { code: -32601, message: `Unknown tool: ${name}` } });
     }
 
-    if (!isPaygated && !privateKey) {
+    if (!isPaygated) {
       return res.json({
         jsonrpc: "2.0", id,
         result: {
           content: [{
             type: "text",
-            text: "⚠️ **Payment not configured.**\n\nTwo options:\n\n**Option 1: Pay with card (no wallet needed):**\nBuy credits at https://aeonos.basechainlabs.com/#get-access and use your API key as `AEONOS_API_KEY` in settings.\n\n**Option 2: Pay with USDC (x402):**\nAdd a Base wallet private key with USDC as `AEONOS_PRIVATE_KEY`. Get USDC on Base at coinbase.com/wallet.",
+            text: "⚠️ **Payment not configured.**\n\nTwo options:\n\n**Option 1: Pay with card (no wallet needed):**\nBuy credits at https://aeonos.basechainlabs.com/#get-access and use your API key as `AEONOS_API_KEY` in settings.\n\n**Option 2: Pay with USDC (x402):**\nRun AEONOS locally with `npx aeonos-mcp` and set `AEONOS_PRIVATE_KEY` on your own machine. Your key never leaves your computer; never send it to any hosted service.",
           }],
         },
       });
@@ -383,13 +339,9 @@ Payments are handled automatically via x402 (USDC on Base). Each call deducts fr
     try {
       const callerId = args.caller_id || defaultCallerId || "mcp-user";
       let text: string;
-      if (isPaygated) {
-        const directive = buildAeonosDirective(name, args.query);
-        const result    = await runAgent({ query: directive, caller_id: callerId, citationSamples: name === "aeonos_query" ? 1 : undefined });
-        text = result.response;
-      } else {
-        text = await callAeonos(path, args.query, callerId, { privateKey });
-      }
+      const directive = buildAeonosDirective(name, args.query);
+      const result    = await runAgent({ query: directive, caller_id: callerId, citationSamples: name === "aeonos_query" ? 1 : undefined });
+      text = result.response;
       return res.json({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text }] } });
     } catch (e: any) {
       return res.json({ jsonrpc: "2.0", id, error: { code: -32000, message: e.message } });

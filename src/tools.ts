@@ -414,7 +414,22 @@ export type CitationOptions = {
   locationCode?: number;
   /** Return every sampled answer's full text so it can be read later. */
   includeAnswers?: boolean;
+  /**
+   * Only these engines are sampled (13/10/2026); the others are reported as unavailable "not requested" and
+   * never counted as 0%. Lets a caller redo just the engines that failed instead of buying all six again.
+   * Default: every engine with a key.
+   */
+  engines?: EngineKey[];
 };
+
+/** Most questions one /api/citations call takes. More must go in another call: nothing is dropped silently (13/10/2026). */
+export const MAX_CITATION_QUESTIONS = 6;
+
+/** Public engine names on /api/citations and their sampler keys. */
+export const CITATION_ENGINE_NAMES = {
+  chatgpt: "gpt", gemini: "gemini", google_ai: "aio", google_ai_mode: "aimode", perplexity: "pplx", claude: "claude",
+} as const satisfies Record<string, EngineKey>;
+export type CitationEngineName = keyof typeof CITATION_ENGINE_NAMES;
 
 // Perplexity/ChatGPT answers are non-deterministic, so one sample per query is noise.
 // LLM engines get CITATION_SAMPLES per query; Google AIO + Bing are SERP snapshots and run once.
@@ -441,7 +456,126 @@ export const CITATION_METHOD_VERSION = "v3";
 export type CitationMethod = { version: string; samples: number; models: typeof CITATION_MODELS };
 export const citationMethod = (samples: number): CitationMethod => ({ version: CITATION_METHOD_VERSION, samples, models: { ...CITATION_MODELS } });
 
-const QUERY_CONCURRENCY = 2; // keeps in-flight LLM calls ≈ 2 × 2 × samples, under Perplexity/OpenAI burst limits
+/**
+ * Call limits and retries for the citation sampler (12/10/2026). The 11-12/10/2026 weekly readings were invalid
+ * because single provider calls failed and were never retried: Perplexity 429s (12 calls in flight across Pemba's
+ * two parallel chunks), DataForSEO "40101 Internal SE Server Error" and 20 s timeouts on the AI Overview fetch
+ * (DataForSEO's own example of a 40101 call takes 22 s), and the odd Gemini timeout.
+ * Each provider now has its own cap on calls in flight, transient failures are retried with backoff, and a run
+ * time budget makes sure the whole check still answers inside the 300 s function limit (and Pemba's 280 s wait).
+ * Mutable so tests can shorten delays; production never changes it.
+ */
+export const CITATION_RETRY = {
+  /** Tries per LLM call, the first included. */
+  attempts: 3,
+  /**
+   * Tries per DataForSEO SERP fetch. Google answers DataForSEO's scrape with 40101 at random, after DataForSEO's own
+   * retries: on 12/10/2026, 6 of 10 a pilot clinic (location 2036) fetches failed even one at a time, and 2 of 12
+   * for pemba.ai (2840). A failed fetch costs US$0.002, so more tries are cheap.
+   */
+  serpAttempts: 6,
+  /** Tries per call that keeps getting 429 rate limit, the first included (other failures get `attempts`). */
+  rateLimitAttempts: 6,
+  /**
+   * Backoff before retry n is baseDelayMs × 2^(n-1), capped at 15 s. Other failures get ±25% jitter; a 429 gets
+   * 50-150% jitter so the two parallel Pemba chunks do not retry in step, and its Retry-After header wins when present.
+   */
+  baseDelayMs: 2000,
+  /**
+   * Least gap between two Perplexity call starts within one check (12/10/2026). Sonar Chat Completions became Agent API
+   * requests on 27/09/2026, so the Agent API limit applies: the account is Tier 1, 3 requests per rolling 1 s window and
+   * 150 a minute, per organisation, and the one key is shared with Sailor. One start a second per check keeps Pemba's two
+   * parallel chunks at 2 a second and 120 a minute at most, leaving room for Sailor.
+   */
+  pplxStartGapMs: 1000,
+  /** No retry is started after this long into the run. */
+  retryUntilMs: 150_000,
+  /** No call is started after this long, and every call's timeout is cut to end by then. */
+  hardStopMs: 210_000,
+};
+
+/**
+ * Calls in flight per provider within one check. Perplexity's is the tight one: 3 per check still drew 429s on the
+ * 12/10/2026 weekly retakes (Pemba sends 2 chunks at once, so 6 in flight against a 3-per-second limit).
+ */
+export const PROVIDER_CONCURRENCY = { pplx: 2, gpt: 6, gemini: 6, claude: 6, dataforseo: 12 } as const;
+
+/** Per-call timeouts. DataForSEO live SERP tasks can legitimately take 20-60 s when an AI Overview loads. */
+const CALL_TIMEOUT_MS = { pplx: 30_000, gpt: 40_000, gemini: 45_000, claude: 45_000, dataforseo: 60_000 } as const;
+
+/** DataForSEO task codes worth another try: 40101 search engine error, 50000 internal error, 50401 live task timeout. */
+const RETRYABLE_DFS_CODES = new Set([40101, 50000, 50401]);
+
+/** Transient failures worth another try. Auth errors, bad requests and missing keys are not. */
+export function isRetryable(e: unknown): boolean {
+  const err = (e ?? {}) as { status?: unknown; dfsCode?: unknown; message?: string };
+  if (typeof err.dfsCode === "number") return RETRYABLE_DFS_CODES.has(err.dfsCode);
+  if (typeof err.status === "number") return err.status === 408 || err.status === 409 || err.status === 429 || err.status >= 500;
+  const reason = failReason(e);
+  return reason === "timeout" || reason === "empty" || /fetch failed|ECONNRESET|socket|network/i.test(reason);
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Runs at most `max` calls at a time, and starts them at least `minGapMs` apart; the rest wait their turn. */
+export function makeLimiter(max: number, minGapMs = 0) {
+  let active = 0;
+  let nextStart = 0;
+  const waiting: (() => void)[] = [];
+  return async <T>(fn: () => Promise<T>): Promise<T> => {
+    while (active >= max) await new Promise<void>((resolve) => waiting.push(resolve));
+    active++;
+    try {
+      if (minGapMs > 0) {
+        const now = Date.now();
+        const at = Math.max(now, nextStart);
+        nextStart = at + minGapMs;
+        if (at > now) await sleep(at - now);
+      }
+      return await fn();
+    } finally { active--; waiting.shift()?.(); }
+  };
+}
+type Limiter = ReturnType<typeof makeLimiter>;
+
+/**
+ * Wait before retry `attempt` (1 = the first retry). A 429 honours Retry-After when the provider sends one (plus up to
+ * 1 s jitter), otherwise exponential backoff with 50-150% jitter. Other failures: exponential with ±25% jitter.
+ */
+export function retryDelayMs(attempt: number, e: unknown, rand: () => number = Math.random): number {
+  const err = (e ?? {}) as { status?: unknown; retryAfterMs?: unknown };
+  const exp = Math.min(CITATION_RETRY.baseDelayMs * 2 ** (attempt - 1), 15_000);
+  if (err.status === 429) {
+    const retryAfter = Number(err.retryAfterMs) || 0;
+    return retryAfter > 0 ? retryAfter + rand() * 1000 : exp * (0.5 + rand());
+  }
+  return exp * (0.75 + rand() * 0.5);
+}
+
+/** The run's clock: how long a call may take so it still ends inside the run time budget. */
+function callTimeout(startedAt: number, baseMs: number): number {
+  const left = startedAt + CITATION_RETRY.hardStopMs - Date.now();
+  if (left < 3000) throw new Error("run time budget used");
+  return Math.min(baseMs, left);
+}
+
+/**
+ * One provider call with a slot from its limiter, retried with backoff on transient failures.
+ * The slot is released while waiting to retry, so a backing-off call never blocks the others.
+ */
+async function callWithRetry<T>(limit: Limiter, startedAt: number, baseTimeoutMs: number, call: (timeoutMs: number) => Promise<T>, attempts = CITATION_RETRY.attempts): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await limit(() => call(callTimeout(startedAt, baseTimeoutMs)));
+    } catch (e) {
+      const rateLimited = (e as { status?: unknown }).status === 429;
+      if (attempt >= Math.max(attempts, rateLimited ? CITATION_RETRY.rateLimitAttempts : 0) || !isRetryable(e)) throw e;
+      const delay = retryDelayMs(attempt, e);
+      if (Date.now() + delay - startedAt > CITATION_RETRY.retryUntilMs) throw e;
+      await sleep(delay);
+    }
+  }
+}
 
 type SentimentResult = {
   query: string;
@@ -629,49 +763,63 @@ type Collected = Record<EngineKey, LlmRow[]> & {
 async function collectCitations(domain: string, queries: string[], samples: number, opts: CitationOptions = {}): Promise<Collected> {
   const brand = brandRegex(opts.brandName);
   const loc = opts.locationCode;
-  const pplxKey = process.env.PPLX_API_KEY;
-  const openaiKey = process.env.OPENAI_API_KEY;
-  const geminiKey = process.env.GEMINI_API_KEY;
-  const claudeKey = process.env.ANTHROPIC_API_KEY;
   const hasDFS = !!(process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD);
-  const ordered = queries.slice(0, 6);
+  const ordered = queries.slice(0, MAX_CITATION_QUESTIONS);
+  // Engines the caller asked for (default all). An engine that is not wanted is not attempted, not charged and
+  // reported as unavailable "not requested", so the caller's reading treats it as not sampled.
+  const want = (k: EngineKey) => !opts.engines || opts.engines.includes(k);
+  const pplxKey = want("pplx") ? process.env.PPLX_API_KEY : undefined;
+  const openaiKey = want("gpt") ? process.env.OPENAI_API_KEY : undefined;
+  const geminiKey = want("gemini") ? process.env.GEMINI_API_KEY : undefined;
+  const claudeKey = want("claude") ? process.env.ANTHROPIC_API_KEY : undefined;
   const out: Collected = {
     pplx: [], gpt: [], gemini: [], claude: [], aio: [], aimode: [], unavailable: {},
     errors: { pplx: [], gpt: [], gemini: [], claude: [], aio: [], aimode: [] },
-    attempted: { pplx: !!pplxKey, gpt: !!openaiKey, gemini: !!geminiKey, claude: !!claudeKey, aio: hasDFS, aimode: hasDFS },
+    attempted: { pplx: !!pplxKey, gpt: !!openaiKey, gemini: !!geminiKey, claude: !!claudeKey, aio: hasDFS && want("aio"), aimode: hasDFS && want("aimode") },
     queryCount: ordered.length,
     samples,
   };
-  const queue = [...ordered];
   const attempted = { pplx: 0, gpt: 0, gemini: 0, claude: 0, aio: 0, aimode: 0 };
 
-  const worker = async () => {
-    for (let query = queue.shift(); query !== undefined; query = queue.shift()) {
-      const q = query;
-      const [pplx, gpt, gemini, claude, aio, aimode] = await Promise.allSettled([
-        pplxKey ? (attempted.pplx++, sampleLlm(domain, q, samples, () => queryPplxRaw(q, pplxKey), brand)) : Promise.resolve(null),
-        openaiKey ? (attempted.gpt++, sampleLlm(domain, q, samples, () => queryGPTRaw(q, openaiKey), brand)) : Promise.resolve(null),
-        geminiKey ? (attempted.gemini++, sampleLlm(domain, q, samples, () => queryGeminiRaw(q, geminiKey), brand)) : Promise.resolve(null),
-        claudeKey ? (attempted.claude++, sampleLlm(domain, q, samples, () => queryClaudeRaw(q), brand)) : Promise.resolve(null),
-        hasDFS ? (attempted.aio++, queryGoogleAIOverview(q, loc)) : Promise.resolve(null),
-        hasDFS ? (attempted.aimode++, queryGoogleAIMode(q, loc)) : Promise.resolve(null),
-      ]);
-      const llm = (k: EngineKey, r: PromiseSettledResult<Sampled | null>) => {
-        if (r.status === "rejected") { out.errors[k].push({ query: q, reason: failReason(r.reason) }); return; }
-        if (!r.value) return;
-        if (r.value.row) out[k].push(r.value.row);
-        for (const reason of r.value.errors) out.errors[k].push({ query: q, reason });
-      };
-      llm("pplx", pplx); llm("gpt", gpt); llm("gemini", gemini); llm("claude", claude);
-      // Google surfaces: a fetched SERP with no AI answer is a shown:false row (not cited); a failed fetch is an error, not a row.
-      const serp = (k: EngineKey, r: PromiseSettledResult<GoogleAnswer | null>) => {
-        if (r.status === "rejected") out.errors[k].push({ query: q, reason: failReason(r.reason) });
-        else if (r.value) out[k].push(serpRow(domain, q, r.value, brand));
-      };
-      serp("aio", aio); serp("aimode", aimode);
-    }
+  // Every question starts at once; each provider's limiter decides how many of its calls are in flight, so a slow
+  // or backing-off engine no longer holds up the others question by question (12/10/2026).
+  const startedAt = Date.now();
+  const limit = {
+    pplx: makeLimiter(PROVIDER_CONCURRENCY.pplx, CITATION_RETRY.pplxStartGapMs), gpt: makeLimiter(PROVIDER_CONCURRENCY.gpt), gemini: makeLimiter(PROVIDER_CONCURRENCY.gemini),
+    claude: makeLimiter(PROVIDER_CONCURRENCY.claude), dataforseo: makeLimiter(PROVIDER_CONCURRENCY.dataforseo),
   };
-  await Promise.all(Array.from({ length: Math.min(QUERY_CONCURRENCY, ordered.length) }, worker));
+  /** One LLM sample: an empty answer is retried like any other transient failure. */
+  const llmCall = (lim: Limiter, baseMs: number, call: (timeoutMs: number) => Promise<LlmRun>) => () =>
+    callWithRetry(lim, startedAt, baseMs, async (t) => {
+      const r = await call(t);
+      if (!r.answer.length && !r.citations.length) throw new Error("empty");
+      return r;
+    });
+  const serpCall = (call: (timeoutMs: number) => Promise<GoogleAnswer>) => callWithRetry(limit.dataforseo, startedAt, CALL_TIMEOUT_MS.dataforseo, call, CITATION_RETRY.serpAttempts);
+
+  await Promise.all(ordered.map(async (q) => {
+    const [pplx, gpt, gemini, claude, aio, aimode] = await Promise.allSettled([
+      pplxKey ? (attempted.pplx++, sampleLlm(domain, q, samples, llmCall(limit.pplx, CALL_TIMEOUT_MS.pplx, (t) => queryPplxRaw(q, pplxKey, t)), brand)) : Promise.resolve(null),
+      openaiKey ? (attempted.gpt++, sampleLlm(domain, q, samples, llmCall(limit.gpt, CALL_TIMEOUT_MS.gpt, (t) => queryGPTRaw(q, openaiKey, t)), brand)) : Promise.resolve(null),
+      geminiKey ? (attempted.gemini++, sampleLlm(domain, q, samples, llmCall(limit.gemini, CALL_TIMEOUT_MS.gemini, (t) => queryGeminiRaw(q, geminiKey, t)), brand)) : Promise.resolve(null),
+      claudeKey ? (attempted.claude++, sampleLlm(domain, q, samples, llmCall(limit.claude, CALL_TIMEOUT_MS.claude, (t) => queryClaudeRaw(q, t)), brand)) : Promise.resolve(null),
+      hasDFS && want("aio") ? (attempted.aio++, serpCall((t) => queryGoogleAIOverview(q, loc, t))) : Promise.resolve(null),
+      hasDFS && want("aimode") ? (attempted.aimode++, serpCall((t) => queryGoogleAIMode(q, loc, t))) : Promise.resolve(null),
+    ]);
+    const llm = (k: EngineKey, r: PromiseSettledResult<Sampled | null>) => {
+      if (r.status === "rejected") { out.errors[k].push({ query: q, reason: failReason(r.reason) }); return; }
+      if (!r.value) return;
+      if (r.value.row) out[k].push(r.value.row);
+      for (const reason of r.value.errors) out.errors[k].push({ query: q, reason });
+    };
+    llm("pplx", pplx); llm("gpt", gpt); llm("gemini", gemini); llm("claude", claude);
+    // Google surfaces: a fetched SERP with no AI answer is a shown:false row (not cited); a failed fetch is an error, not a row.
+    const serp = (k: EngineKey, r: PromiseSettledResult<GoogleAnswer | null>) => {
+      if (r.status === "rejected") out.errors[k].push({ query: q, reason: failReason(r.reason) });
+      else if (r.value) out[k].push(serpRow(domain, q, r.value, brand));
+    };
+    serp("aio", aio); serp("aimode", aimode);
+  }));
 
   const byQuery = (a: { query: string }, b: { query: string }) => ordered.indexOf(a.query) - ordered.indexOf(b.query);
   for (const k of ENGINE_KEYS) { out[k].sort(byQuery); out.errors[k].sort(byQuery); }
@@ -685,6 +833,9 @@ async function collectCitations(domain: string, queries: string[], samples: numb
   if (!claudeKey) out.unavailable.claude = "no ANTHROPIC_API_KEY";
   else if (attempted.claude && !out.claude.length) out.unavailable.claude = "API returned no data";
   if (!hasDFS) { out.unavailable.google_ai_overviews = "no DataForSEO credentials"; out.unavailable.google_ai_mode = "no DataForSEO credentials"; }
+  // Not asked for this call: says so, in place of any key or data reason
+  const publicName: Record<EngineKey, string> = { pplx: "perplexity", gpt: "chatgpt", gemini: "gemini", claude: "claude", aio: "google_ai_overviews", aimode: "google_ai_mode" };
+  for (const k of ENGINE_KEYS) if (!want(k)) out.unavailable[publicName[k]] = "not requested";
   return out;
 }
 
@@ -744,14 +895,14 @@ const stripAnswer = ({ query, cited, citedSamples, samples, competitors, competi
 /** stripAnswer, keeping every sampled answer's text when the caller asked for it. */
 const rowOut = (includeAnswers?: boolean) => (r: CitRow): CitRow => includeAnswers ? { ...stripAnswer(r), answers: r.answers ?? [] } : stripAnswer(r);
 
-async function queryPplxRaw(question: string, key: string): Promise<{ answer: string; citations: string[] }> {
+async function queryPplxRaw(question: string, key: string, timeoutMs: number = CALL_TIMEOUT_MS.pplx): Promise<{ answer: string; citations: string[] }> {
   const res = await fetch("https://api.perplexity.ai/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: CITATION_MODELS.perplexity, messages: [{ role: "user", content: question }], max_tokens: 500 }),
-    signal: AbortSignal.timeout(20000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!res.ok) throw httpError(res.status);
+  if (!res.ok) throw httpError(res.status, res.headers.get("retry-after"));
   const data = await res.json() as any;
   addCost("perplexity", perplexityCost(data.usage));
   const answer: string = data.choices?.[0]?.message?.content ?? "";
@@ -760,15 +911,15 @@ async function queryPplxRaw(question: string, key: string): Promise<{ answer: st
 }
 
 /** ChatGPT via the Responses API with the web search tool (gpt-4o-mini-search-preview was deprecated by 19/09/2026). */
-async function queryGPTRaw(question: string, key: string): Promise<{ answer: string; citations: string[] }> {
+async function queryGPTRaw(question: string, key: string, timeoutMs: number = CALL_TIMEOUT_MS.gpt): Promise<{ answer: string; citations: string[] }> {
   const model = CITATION_MODELS.chatgpt;
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model, tools: [{ type: "web_search" }], input: question, max_output_tokens: 700 }),
-    signal: AbortSignal.timeout(40000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!res.ok) throw httpError(res.status);
+  if (!res.ok) throw httpError(res.status, res.headers.get("retry-after"));
   const data = await res.json() as any;
   if (data?.error) throw new Error(`api error ${String(data.error.code ?? data.error.type ?? "unknown").slice(0, 40)}`);
   addCost("openai", openaiSearchCost(data.usage));
@@ -785,9 +936,16 @@ async function queryGPTRaw(question: string, key: string): Promise<{ answer: str
 /** A fetched Google SERP. shown=false: the page loaded but carried no AI answer, which counts as not cited. Failed fetches throw instead. */
 type GoogleAnswer = { text: string; sources: string[]; shown: boolean };
 
-/** Short failure reason for an HTTP status: "rate limit" for 429, "http <status>" otherwise. */
-function httpError(status: number): Error {
-  return new Error(status === 429 ? "rate limit" : `http ${status}`);
+/** Short failure reason for an HTTP status: "rate limit" for 429, "http <status>" otherwise. Carries the status and any Retry-After (capped at 20 s) for callWithRetry. */
+function httpError(status: number, retryAfter?: string | null): Error {
+  const secs = Number(retryAfter);
+  const retryAfterMs = Number.isFinite(secs) && secs > 0 ? Math.min(secs * 1000, 20_000) : 0;
+  return Object.assign(new Error(status === 429 ? "rate limit" : `http ${status}`), { status, retryAfterMs });
+}
+
+/** A DataForSEO task that came back without results, e.g. 40101 "Internal SE Server Error". */
+function dfsError(code: unknown): Error {
+  return Object.assign(new Error(`dataforseo status ${code ?? "missing"}`), { dfsCode: typeof code === "number" ? code : undefined });
 }
 
 function markdownLinks(md: string): string[] {
@@ -802,20 +960,20 @@ function dfsAuth(): string | null {
 }
 
 /** Google AI Overview for the query. The /regular endpoint never returned one; /advanced with load_async_ai_overview does. */
-async function queryGoogleAIOverview(query: string, locationCode = 2840): Promise<GoogleAnswer> {
+async function queryGoogleAIOverview(query: string, locationCode = 2840, timeoutMs: number = CALL_TIMEOUT_MS.dataforseo): Promise<GoogleAnswer> {
   const auth = dfsAuth();
   if (!auth) throw new Error("no DataForSEO credentials");
   const res = await fetch("https://api.dataforseo.com/v3/serp/google/organic/live/advanced", {
     method: "POST",
     headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
     body: JSON.stringify([{ keyword: query, location_code: locationCode, language_code: "en", device: "desktop", depth: 10, load_async_ai_overview: true }]),
-    signal: AbortSignal.timeout(20000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!res.ok) throw httpError(res.status);
+  if (!res.ok) throw httpError(res.status, res.headers.get("retry-after"));
   const data = await res.json() as any;
   addCost("dataforseo", Number(data.tasks?.[0]?.cost) || 0);
   const code = data.tasks?.[0]?.status_code;
-  if (code !== 20000) throw new Error(`dataforseo status ${code ?? "missing"}`);
+  if (code !== 20000) throw dfsError(code);
   const items: any[] = data.tasks?.[0]?.result?.[0]?.items ?? [];
   const aio = items.find((item: any) => item.type === "ai_overview");
   if (!aio) return { text: "", sources: [], shown: false };
@@ -829,20 +987,20 @@ async function queryGoogleAIOverview(query: string, locationCode = 2840): Promis
 }
 
 /** Google AI Mode answer for the query (DataForSEO serp/google/ai_mode). */
-async function queryGoogleAIMode(query: string, locationCode = 2840): Promise<GoogleAnswer> {
+async function queryGoogleAIMode(query: string, locationCode = 2840, timeoutMs: number = CALL_TIMEOUT_MS.dataforseo): Promise<GoogleAnswer> {
   const auth = dfsAuth();
   if (!auth) throw new Error("no DataForSEO credentials");
   const res = await fetch("https://api.dataforseo.com/v3/serp/google/ai_mode/live/advanced", {
     method: "POST",
     headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
     body: JSON.stringify([{ keyword: query, location_code: locationCode, language_code: "en" }]),
-    signal: AbortSignal.timeout(20000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!res.ok) throw httpError(res.status);
+  if (!res.ok) throw httpError(res.status, res.headers.get("retry-after"));
   const data = await res.json() as any;
   addCost("dataforseo", Number(data.tasks?.[0]?.cost) || 0);
   const code = data.tasks?.[0]?.status_code;
-  if (code !== 20000) throw new Error(`dataforseo status ${code ?? "missing"}`);
+  if (code !== 20000) throw dfsError(code);
   const items: any[] = data.tasks?.[0]?.result?.[0]?.items ?? [];
   const answer = items.find((item: any) => item.type === "ai_overview" || item.type === "ai_mode");
   if (!answer) return { text: "", sources: [], shown: false };
@@ -856,15 +1014,15 @@ async function queryGoogleAIMode(query: string, locationCode = 2840): Promise<Go
 }
 
 /** Gemini with Google Search grounding. Grounding chunks carry a redirect URI and the source domain as title. */
-async function queryGeminiRaw(question: string, key: string): Promise<{ answer: string; citations: string[] }> {
+async function queryGeminiRaw(question: string, key: string, timeoutMs: number = CALL_TIMEOUT_MS.gemini): Promise<{ answer: string; citations: string[] }> {
   const model = CITATION_MODELS.gemini;
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: "POST",
     headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
     body: JSON.stringify({ contents: [{ parts: [{ text: question }] }], tools: [{ google_search: {} }] }),
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!res.ok) throw httpError(res.status);
+  if (!res.ok) throw httpError(res.status, res.headers.get("retry-after"));
   const data = await res.json() as any;
   addCost("gemini", geminiGroundedCost(data.usageMetadata));
   const cand = data.candidates?.[0];
@@ -880,13 +1038,13 @@ async function queryGeminiRaw(question: string, key: string): Promise<{ answer: 
 }
 
 /** Claude with the web search tool. Sources come from the search result blocks and the text citations. */
-async function queryClaudeRaw(question: string): Promise<{ answer: string; citations: string[] }> {
+async function queryClaudeRaw(question: string, timeoutMs: number = CALL_TIMEOUT_MS.claude): Promise<{ answer: string; citations: string[] }> {
   const res = await anthropic.messages.create({
     model: CITATION_MODELS.claude,
     max_tokens: 700,
     tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 } as any],
     messages: [{ role: "user", content: question }],
-  });
+  }, { timeout: timeoutMs, maxRetries: 0 }); // retries happen in callWithRetry, inside the run time budget
   addCost("anthropic", anthropicCost(CITATION_MODELS.claude, res.usage as any));
   const blocks: any[] = res.content as any[];
   const answer = blocks.filter((b) => b.type === "text").map((b) => b.text ?? "").join("");

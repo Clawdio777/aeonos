@@ -140,4 +140,5 @@ The tests do not cover the live providers, so also prove a change on the live en
 - The sampler needs credit on OpenAI and Gemini. When either runs dry that engine is reported as "not sampled", never as 0%.
 - Bing and Copilot are deliberately not sampled (no reliable source). Do not add them.
 - `POST /api/citations` has a downstream consumer (Pemba's measurement loop). Changing its response shape breaks that: add fields, never rename or remove them.
+- `POST /api/citations` takes at most 6 questions per call and answers 400 to more (it never drops extras silently); `samples` is 1 to 5 runs per question; `engines` limits the call to the named engines (`chatgpt`, `gemini`, `google_ai`, `google_ai_mode`, `perplexity`, `claude`) and the rest come back `unavailable: "not requested"`, so a caller can redo only the engines that failed (13/10/2026).
 - Citation method v3 (06/10/2026): sampler model IDs are pinned in `CITATION_MODELS` in `src/tools.ts` (env overrides removed). Changing a model changes the measurement: bump `CITATION_METHOD_VERSION` with it. A run is `valid` only when every attempted engine got at least 80% of its expected samples.

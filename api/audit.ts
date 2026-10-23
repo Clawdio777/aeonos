@@ -8,7 +8,7 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { withPlaceholderNotice, requirePayment, buildBazaarExtension } from "./_x402-gate.js";
+import { withPlaceholderNotice, buildBazaarExtension, verifyPayment, settlePayment, sendNotCharged, buildPaymentReqs, send402 } from "./_x402-gate.js";
 import { runAgent } from "../src/agent.js";
 
 const PRICE_USDC = 2.50;
@@ -33,7 +33,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method === "GET") {
-    const { requirePayment: rp, buildBazaarExtension: _, ...gate } = await import("./_x402-gate.js");
     const reqs = (await import("./_x402-gate.js")).buildPaymentReqs(PRICE_USDC);
     return (await import("./_x402-gate.js")).send402(res, reqs, BAZAAR, RESOURCE_URL(), RESOURCE_DESC);
   }
@@ -48,12 +47,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return (await import("./_x402-gate.js")).send402(res, reqs, BAZAAR, RESOURCE_URL(), RESOURCE_DESC);
   }
 
-  const paymentHeader = await requirePayment(req, res, PRICE_USDC, BAZAAR, RESOURCE_URL(), RESOURCE_DESC);
-  if (paymentHeader === null) return;
+  const payment = await verifyPayment(req, res, PRICE_USDC, BAZAAR, RESOURCE_URL(), RESOURCE_DESC);
+  if (payment === null) return;
 
   try {
     const directive = `Perform a comprehensive AEO/GEO audit. Cover all four layers: on-page content optimisation, technical SEO, authority signals, and AI-specific optimisations (schema, llms.txt, E-E-A-T, AI inclusion check). Deliver a scored report and a prioritised P1/P2/P3 action plan.\n\nQuery: ${query}`;
     const result = await runAgent({ query: directive, caller_id });
+
+    // Charge only now that the result is ready (see _x402-gate.ts "Charge only after the work succeeds").
+    const settled = await settlePayment(payment, "audit", caller_id);
+    if (!settled.ok) return send402(res, buildPaymentReqs(PRICE_USDC), BAZAAR, RESOURCE_URL(), RESOURCE_DESC, settled.reason);
+    if (settled.paymentResponse) res.setHeader("PAYMENT-RESPONSE", settled.paymentResponse);
 
     await Promise.all([
       db.from("query_log").insert({
@@ -67,7 +71,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         { caller_id, query_count: 1, updated_at: new Date().toISOString() },
         { onConflict: "caller_id" }
       ),
-    ]);
+    ]).catch((e) => console.error("[aeonos/audit] log write failed:", e.message));
 
     return res.json({
       status:    "completed",
@@ -76,7 +80,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       tokens:    result.tokens_used,
     });
   } catch (e: any) {
-    console.error("[aeonos/audit]", e.message);
-    return res.status(500).json({ error: e.message });
+    return sendNotCharged(res, "audit", caller_id, e);
   }
 }
