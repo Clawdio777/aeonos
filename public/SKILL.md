@@ -58,6 +58,7 @@ Onboarding agent
 | `POST /api/schema` | **0.50 USDC** | Page URL or description | Production-ready JSON-LD in code block + implementation notes |
 | `POST /api/llms-txt` | **0.50 USDC** | URL or business description | Complete deployable llms.txt file in Markdown |
 | `POST /api/progress` | **1.50 USDC** | URL or business description | Four Layers scores (SXO/AIO/GEO/AEO) + next 3 actions |
+| `POST /api/share-of-voice` | **1.50 USDC** | 2 to 5 brands + queries | Each brand's share of AI citations across the brands compared, per engine |
 
 Base URL: `https://aeonos.basechainlabs.com`  
 Payment: x402 v2 · USDC on Base (eip155:8453) · No API key required
@@ -78,7 +79,7 @@ All endpoints accept the same body:
 
 ```json
 {
-  "query": "Audit mysite.com for AI search visibility",
+  "query": "Audit https://YOUR-SITE.com for AI search visibility",
   "caller_id": "your-agent-id"
 }
 ```
@@ -92,7 +93,7 @@ POST https://aeonos.basechainlabs.com/api/audit
 Content-Type: application/json
 X-Payment: <base64-encoded x402 v2 payment payload>
 
-{"query": "Audit mysite.com", "caller_id": "my-agent-007"}
+{"query": "Audit https://YOUR-SITE.com", "caller_id": "YOUR-AGENT-OR-DOMAIN-ID"}
 ```
 
 Use `@x402/fetch` (npm) or `npx awal x402 pay` to handle payment automatically.
@@ -105,7 +106,7 @@ Use `@x402/fetch` (npm) or `npx awal x402 pay` to handle payment automatically.
 {
   "status": "completed",
   "artifact": {
-    "parts": [{ "type": "text", "text": "# AEO Audit: mysite.com\n\n..." }],
+    "parts": [{ "type": "text", "text": "# AEO Audit: YOUR-SITE.com\n\n..." }],
     "index": 0
   },
   "tool_calls": ["queryLiveResearch", "retrieveSharedAEO", "storeCallerMemory"],
