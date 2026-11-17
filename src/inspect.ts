@@ -19,6 +19,7 @@
 
 import * as cheerio from "cheerio";
 import { createClient } from "@supabase/supabase-js";
+import { regulatedIndustry, regulatedLine } from "./guards.js";
 
 const db = createClient(
   process.env.SUPABASE_URL!,
@@ -59,6 +60,16 @@ export interface SchemaGap {
   reason: string;
 }
 
+/** llms.txt and robots.txt. notChecked / robotsNotChecked: the file couldn't be fetched, so nothing is said about it (17/11/2026). */
+export type LlmsTxtCheck = {
+  present: boolean;
+  aiCrawlersBlocked: string[];
+  robotsRules: string[];
+  recommendations: string[];
+  notChecked?: string;
+  robotsNotChecked?: string;
+};
+
 export interface InspectResult {
   overallScore: number;
   schemaPresent: string[];
@@ -68,19 +79,15 @@ export interface InspectResult {
   eatGaps: { issue: string; priority: string }[];
   entityScore: number;
   entityGaps: string[];
-  freshnessScore: number;
+  /** null = the page shows no date, so freshness was not measured. */
+  freshnessScore: number | null;
   freshnessDate: string | null;
   stalenessRisk: boolean;
   paaScore: number;
   paaGaps: string[];
   conversationalScore: number;
   conversationalIssues: string[];
-  llmsTxt: {
-    present: boolean;
-    aiCrawlersBlocked: string[];
-    robotsRules: string[];
-    recommendations: string[];
-  };
+  llmsTxt: LlmsTxtCheck;
   p1Gaps: string[];
   p2Gaps: string[];
   p3Gaps: string[];
@@ -126,9 +133,8 @@ async function crawlPage(url: string): Promise<CrawlData> {
 
   // Page type inference
   const urlLower = url.toLowerCase();
-  const isHomepage =
-    /\/$/.test(urlLower) ||
-    /^https?:\/\/[^/]+\/?$/.test(urlLower);
+  // The site's root only (17/11/2026: any URL ending in "/" counted, so /blog/post/ was "the homepage")
+  const isHomepage = new URL(url).pathname === "/";
   const hasArticleSignal =
     !!$("article").length ||
     /\/(blog|post|article|news)\//i.test(urlLower) ||
@@ -275,30 +281,30 @@ function analyzeSchemaGaps(presentTypes: string[], pageType: string): SchemaGap[
 
   // P1 gaps — always required
   if (!has("FAQPage"))
-    gaps.push({ type: "FAQPage", priority: "P1", reason: "FAQ schema is the single most impactful schema for AI citation. AI engines extract Q&A pairs directly from FAQPage markup." });
+    gaps.push({ type: "FAQPage", priority: "P1", reason: "No FAQPage markup found on this page. It labels questions and answers that are written on the page." });
 
   if (pageType === "homepage" && !has("Organization"))
-    gaps.push({ type: "Organization", priority: "P1", reason: "Organization schema on homepage establishes entity identity for all AI engines." });
+    gaps.push({ type: "Organization", priority: "P1", reason: "No Organization markup found on the homepage. It states the business's name, web address and profiles in one place." });
 
   if ((pageType === "article" || pageType === "landing") && !has("Article") && !has("BlogPosting"))
-    gaps.push({ type: "Article", priority: "P1", reason: "Article/BlogPosting schema on content pages signals authoritative content to AI engines." });
+    gaps.push({ type: "Article", priority: "P1", reason: "No Article or BlogPosting markup found on this content page. It states the headline, author and dates." });
 
   if ((pageType === "article" || pageType === "landing") && !has("Speakable"))
-    gaps.push({ type: "Speakable", priority: "P1", reason: "Speakable schema directly marks content for voice search and Google Assistant reading." });
+    gaps.push({ type: "Speakable", priority: "P1", reason: "No Speakable markup found. Google documents it as a beta for news publishers; for other sites it is optional." });
 
   // P2 gaps
   if (!has("BreadcrumbList"))
-    gaps.push({ type: "BreadcrumbList", priority: "P2", reason: "BreadcrumbList improves site hierarchy understanding for AI knowledge graph mapping." });
+    gaps.push({ type: "BreadcrumbList", priority: "P2", reason: "No BreadcrumbList markup found. It states where this page sits in the site." });
 
   if (!has("HowTo") && pageType !== "homepage")
-    gaps.push({ type: "HowTo", priority: "P2", reason: "HowTo schema on instructional content significantly boosts PAA and featured snippet capture." });
+    gaps.push({ type: "HowTo", priority: "P2", reason: "No HowTo markup found. Only relevant when the page gives step-by-step instructions." });
 
   if (!has("Person") && (pageType === "article" || pageType === "landing"))
-    gaps.push({ type: "Person", priority: "P2", reason: "Person schema for author attribution strengthens E-E-A-T signals." });
+    gaps.push({ type: "Person", priority: "P2", reason: "No Person markup found for the author." });
 
   // P3 gaps
   if (!has("WebSite"))
-    gaps.push({ type: "WebSite", priority: "P3", reason: "WebSite schema with SearchAction enables sitelinks search box in SERPs." });
+    gaps.push({ type: "WebSite", priority: "P3", reason: "No WebSite markup found. It states the site's name." });
 
   return gaps;
 }
@@ -339,7 +345,7 @@ function generateSchemaTemplates(
                 name: `What is ${name}?`,
                 acceptedAnswer: {
                   "@type": "Answer",
-                  text: `[Add a 40-60 word direct answer about ${name}]`,
+                  text: `[Add the direct answer about ${name}, as written on the page]`,
                 },
               },
               {
@@ -347,7 +353,7 @@ function generateSchemaTemplates(
                 name: `How does ${name} work?`,
                 acceptedAnswer: {
                   "@type": "Answer",
-                  text: "[Add a 40-60 word direct explanation]",
+                  text: "[Add the direct explanation, as written on the page]",
                 },
               },
             ];
@@ -366,11 +372,11 @@ function generateSchemaTemplates(
           "@type": "Organization",
           name,
           url: baseUrl,
-          logo: `${baseUrl}/logo.png`,
+          logo: "[Your logo's web address]",
           contactPoint: {
             "@type": "ContactPoint",
             contactType: "customer support",
-            email: `hello@${crawl.domain}`,
+            email: "[Your support email address]",
           },
           sameAs: ["[Add your LinkedIn URL]", "[Add your Twitter/X URL]"],
         },
@@ -389,10 +395,11 @@ function generateSchemaTemplates(
           publisher: {
             "@type": "Organization",
             name,
-            logo: { "@type": "ImageObject", url: `${baseUrl}/logo.png` },
+            logo: { "@type": "ImageObject", url: "[Your logo's web address]" },
           },
-          datePublished: new Date().toISOString().split("T")[0],
-          dateModified: new Date().toISOString().split("T")[0],
+          // Never today's date: that would state the page was published and changed today (17/11/2026)
+          datePublished: "[YYYY-MM-DD the page was first published]",
+          dateModified: "[YYYY-MM-DD the page was last changed]",
           url: crawl.url,
           description: crawl.metaDescription || "[Add meta description]",
         },
@@ -504,14 +511,14 @@ function assessEEAT(
 
   if (!hasAuthor && crawl.pageType === "article") {
     score -= 15;
-    gaps.push({ issue: "No author attribution on content page — AI engines weight authoritative, attributed content higher", priority: "P1" });
+    gaps.push({ issue: "No author named on this content page", priority: "P1" });
   }
 
   // About page
   const hasAboutLink = crawl.internalLinks.some((l) => /about/i.test(l));
   if (!hasAboutLink) {
     score -= 10;
-    gaps.push({ issue: "No /about page linked — About pages are a core E-E-A-T signal for entity authority", priority: "P2" });
+    gaps.push({ issue: "No link to an About page found on this page", priority: "P2" });
   }
 
   // Contact information
@@ -520,7 +527,7 @@ function assessEEAT(
     crawl.internalLinks.some((l) => /contact/i.test(l));
   if (!hasContact) {
     score -= 10;
-    gaps.push({ issue: "No visible contact information — AI engines flag sites without contact details as lower trust", priority: "P2" });
+    gaps.push({ issue: "No contact details or contact link found on this page", priority: "P2" });
   }
 
   // External authority links
@@ -536,21 +543,21 @@ function assessEEAT(
   });
   if (externalLinks.length === 0 && crawl.pageType === "article") {
     score -= 10;
-    gaps.push({ issue: "No external links to authoritative sources — citing sources is an E-E-A-T requirement for AI citation", priority: "P2" });
+    gaps.push({ issue: "No links to outside sources on this content page", priority: "P2" });
   }
 
   // Privacy + terms
   const hasPrivacy = crawl.internalLinks.some((l) => /privacy|terms/i.test(l));
   if (!hasPrivacy) {
     score -= 5;
-    gaps.push({ issue: "No privacy policy or terms linked — required for trustworthy entity classification", priority: "P3" });
+    gaps.push({ issue: "No link to a privacy policy or terms found on this page", priority: "P3" });
   }
 
   // Last modified visible
   const hasDateVisible = /updated|modified|published|last reviewed/i.test(text);
   if (!hasDateVisible && crawl.pageType === "article") {
     score -= 5;
-    gaps.push({ issue: "No visible last-modified date — AI engines prefer content with explicit freshness signals", priority: "P3" });
+    gaps.push({ issue: "No published or updated date shown on this content page", priority: "P3" });
   }
 
   return { score: Math.max(0, score), gaps };
@@ -561,7 +568,7 @@ function assessEEAT(
 function analyzeContentFreshness(
   $: cheerio.CheerioAPI,
   schemas: SchemaBlock[]
-): { score: number; date: string | null; stalenessRisk: boolean } {
+): { score: number | null; date: string | null; stalenessRisk: boolean } {
   const dateStr =
     $('meta[property="article:modified_time"]').attr("content") ||
     $('meta[property="article:published_time"]').attr("content") ||
@@ -576,10 +583,11 @@ function analyzeContentFreshness(
       return null;
     })();
 
-  if (!dateStr) return { score: 50, date: null, stalenessRisk: false };
+  // No date on the page: not measured (17/11/2026: it used to be filled in as 50/100)
+  if (!dateStr) return { score: null, date: null, stalenessRisk: false };
 
   const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return { score: 50, date: null, stalenessRisk: false };
+  if (isNaN(date.getTime())) return { score: null, date: null, stalenessRisk: false };
 
   const ageMonths =
     (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24 * 30);
@@ -608,24 +616,19 @@ function analyzePAA(crawl: CrawlData): { score: number; gaps: string[] } {
 
   if (questionHeadings.length === 0) {
     score -= 40;
-    gaps.push("No question-format headings (How/What/Why/When/Who). These are the primary PAA and featured snippet triggers.");
-  } else if (questionHeadings.length < 3) {
-    score -= 20;
-    gaps.push(`Only ${questionHeadings.length} question heading(s). Aim for 4-6 to maximise PAA coverage.`);
+    gaps.push("No question-format headings (How/What/Why/When/Who) on this page. Headings worded as the questions buyers ask make the answer under each easy to find.");
   }
+  // 17/11/2026: the "fewer than 3 question headings, aim for 4-6" rule was removed: no evidence for a count.
 
   // Check for direct answer paragraphs — heuristic: short paragraphs after H2s
   const h2Count = crawl.headings.filter((h) => h.level === 2).length;
   if (h2Count === 0) {
     score -= 20;
-    gaps.push("No H2 subheadings. H2 structure is required for featured snippet and PAA extraction.");
+    gaps.push("No H2 subheadings on this page.");
   }
 
-  // Word count check
-  if (crawl.wordCount < 300) {
-    score -= 20;
-    gaps.push(`Page is only ${crawl.wordCount} words. Thin content is rarely featured. Minimum 600 words recommended.`);
-  }
+  // 17/11/2026: the word-count rule ("under 300 words", "minimum 600 words recommended") was removed: no study shows a
+  // length that gets a page cited (Pemba Agent's review, pemba#223).
 
   if (gaps.length === 0) {
     // Check if any question headings could be improved
@@ -633,7 +636,7 @@ function analyzePAA(crawl: CrawlData): { score: number; gaps: string[] } {
       (h) => h.level === 2 && !/^(how|what|why|when|who|is |can |does |will |are )/i.test(h.text)
     );
     if (nonQuestionH2s.length > 0) {
-      gaps.push(`${nonQuestionH2s.length} H2(s) are not question-format. Consider rewriting these as questions to capture more PAA slots.`);
+      gaps.push(`${nonQuestionH2s.length} H2(s) are not question-format. Where a section answers a buyer's question, the heading can ask it.`);
       score -= 10;
     }
   }
@@ -670,16 +673,10 @@ function analyzeConversational(
   const stuffed = Object.entries(wordFreq).filter(([, c]) => c > 4).map(([w]) => w);
   if (stuffed.length > 0) {
     score -= 15;
-    issues.push(`Possible keyword stuffing: "${stuffed.slice(0, 3).join('", "')}" repeated heavily. Natural language reads better to AI engines and voice assistants.`);
+    issues.push(`Possible keyword stuffing: "${stuffed.slice(0, 3).join('", "')}" repeated more than 4 times in the opening copy.`);
   }
 
-  // Voice search test — long sentences are hard to parse aloud
-  const sentences = crawl.first150Words.split(/[.!?]/).filter((s) => s.trim().length > 0);
-  const longSentences = sentences.filter((s) => s.split(/\s+/).length > 25);
-  if (longSentences.length > 0) {
-    score -= 15;
-    issues.push("Sentences over 25 words detected in opening copy. Voice search answers must be speakable — break long sentences into shorter ones.");
-  }
+  // 17/11/2026: the "sentences over 25 words" rule was removed: a length rule with no evidence behind it.
 
   // Does content relate to target query?
   if (targetQuery) {
@@ -690,7 +687,7 @@ function analyzeConversational(
     const queryMatches = queryWords.filter((w) => text150.includes(w)).length;
     if (queryMatches < Math.ceil(queryWords.length * 0.4)) {
       score -= 20;
-      issues.push(`Page opening doesn't address the target query "${targetQuery}" clearly. AI engines match citation relevance based on semantic alignment with the query.`);
+      issues.push(`Page opening uses few of the words in the target query "${targetQuery}".`);
     }
   }
 
@@ -719,15 +716,12 @@ const AI_BOTS = [
   "cohere-ai",
 ];
 
-async function checkLlmsTxt(domain: string): Promise<{
-  present: boolean;
-  aiCrawlersBlocked: string[];
-  robotsRules: string[];
-  recommendations: string[];
-}> {
+async function checkLlmsTxt(domain: string): Promise<LlmsTxtCheck> {
   const base = `https://${domain}`;
   const recommendations: string[] = [];
   let present = false;
+  let notChecked: string | undefined;
+  let robotsNotChecked: string | undefined;
   const aiCrawlersBlocked: string[] = [];
   const robotsRules: string[] = [];
 
@@ -738,10 +732,13 @@ async function checkLlmsTxt(domain: string): Promise<{
       signal: AbortSignal.timeout(8000),
     });
     present = r.ok && r.status === 200;
-  } catch {}
+    if (!present && r.status !== 404 && r.status !== 410) notChecked = `HTTP ${r.status}`;
+  } catch (e: any) {
+    notChecked = `fetch failed: ${e?.name === "TimeoutError" ? "timed out" : e?.message ?? "error"}`;
+  }
 
-  if (!present) {
-    recommendations.push("Create /llms.txt to guide AI crawlers. Without it, AI engines have no structured context about what your site is and who it serves. This is a P1 citation gap.");
+  if (!present && !notChecked) {
+    // Reported once, from p1Gaps; no claim about what AI engines do without it (17/11/2026)
   }
 
   // Check robots.txt for AI bot rules
@@ -750,6 +747,7 @@ async function checkLlmsTxt(domain: string): Promise<{
       headers: { "User-Agent": CRAWLER_UA },
       signal: AbortSignal.timeout(8000),
     });
+    if (!r.ok && r.status !== 404 && r.status !== 410) robotsNotChecked = `HTTP ${r.status}`;
     if (r.ok) {
       const text = await r.text();
       const lines = text.split("\n");
@@ -773,15 +771,17 @@ async function checkLlmsTxt(domain: string): Promise<{
         }
       }
     }
-  } catch {}
+  } catch (e: any) {
+    robotsNotChecked = `fetch failed: ${e?.name === "TimeoutError" ? "timed out" : e?.message ?? "error"}`;
+  }
 
   if (aiCrawlersBlocked.length > 0) {
     recommendations.push(
-      `CRITICAL: ${aiCrawlersBlocked.join(", ")} blocked in robots.txt. These AI engines cannot crawl or cite your content. Remove these Disallow rules immediately.`
+      `CRITICAL: ${aiCrawlersBlocked.join(", ")} blocked by robots.txt (Disallow: /). These crawlers are told not to read the site. Remove these Disallow rules unless the block is wanted.`
     );
   }
 
-  return { present, aiCrawlersBlocked, robotsRules, recommendations };
+  return { present, aiCrawlersBlocked, robotsRules, recommendations, ...(notChecked ? { notChecked } : {}), ...(robotsNotChecked ? { robotsNotChecked } : {}) };
 }
 
 // ── Function 10: Entity Disambiguation Scoring ───────────────────────────────
@@ -807,7 +807,7 @@ function scoreEntityDisambiguation(
   const nameInH1 = !!h1;
   if (!nameInTitle || !nameInH1) {
     score -= 15;
-    gaps.push("Entity name missing from title tag or H1. Consistent entity naming across title, H1, and schema is the foundation of entity disambiguation.");
+    gaps.push("No title tag or no H1 heading found on this page.");
   }
 
   // ICP/audience defined in opening
@@ -817,7 +817,7 @@ function scoreEntityDisambiguation(
     );
   if (!hasAudienceSignal) {
     score -= 20;
-    gaps.push('No clear audience definition in first 150 words. Add "for [specific ICP]" to your opening so AI engines can match your content to relevant queries.');
+    gaps.push(`AEONOS's audience check (words such as "for small business", "for agencies" in the first 150 words) found none. Say who the business serves in the opening, in the words its buyers use.`);
   }
 
   // Value proposition / outcome
@@ -827,7 +827,7 @@ function scoreEntityDisambiguation(
     );
   if (!hasOutcome) {
     score -= 20;
-    gaps.push("No outcome/benefit stated in first 150 words. AI engines extract entity purpose from this. Add: 'helps [ICP] achieve [specific outcome].'");
+    gaps.push("AEONOS's outcome check (words such as 'helps', 'saves', 'improves' in the first 150 words) found none. Say what the business does for its buyers in the opening.");
   }
 
   // Industry / category
@@ -837,13 +837,13 @@ function scoreEntityDisambiguation(
     );
   if (!hasCategory) {
     score -= 15;
-    gaps.push("Industry category not established in opening copy. AI knowledge graphs need a category anchor (platform, tool, service, etc.) to classify the entity.");
+    gaps.push("AEONOS's category check (words such as 'service', 'platform', 'tool' in the first 150 words) found none. Say what kind of business this is in the opening.");
   }
 
   // Schema entity consistency
   if (schemaNameVal && h1 && !h1.includes(schemaNameVal) && !schemaNameVal.includes(h1.split(" ")[0])) {
     score -= 10;
-    gaps.push("Entity name in schema doesn't match H1. Inconsistent naming confuses AI entity resolution. Align schema name, H1, and title tag.");
+    gaps.push("The name in the page's schema markup doesn't match its H1 heading.");
   }
 
   return { score: Math.max(0, score), gaps };
@@ -889,6 +889,13 @@ function computeDelta(
   return delta;
 }
 
+/** Pure: the weighted average of the measured parts, re-weighted over those parts only. */
+export function weightedScore(parts: [number | null, number][]): number {
+  const m = parts.filter((p): p is [number, number] => typeof p[0] === "number");
+  const w = m.reduce((a, [, x]) => a + x, 0);
+  return w ? Math.round(m.reduce((a, [s, x]) => a + s * x, 0) / w) : 0;
+}
+
 // ── Main: runInspectSiteStructure ────────────────────────────────────────────
 
 export async function runInspectSiteStructure(input: {
@@ -910,7 +917,7 @@ export async function runInspectSiteStructure(input: {
   try {
     crawl = await crawlPage(url);
   } catch (e: any) {
-    return `Failed to crawl ${url}: ${e.message}`;
+    return `Not checked: ${url} could not be fetched at ${new Date().toISOString()} (${e.message}). Say this page was not checked; do not describe it.`;
   }
 
   const $ = cheerio.load(crawl.html);
@@ -953,14 +960,14 @@ export async function runInspectSiteStructure(input: {
   }
   if (entityScore < 60) p1Gaps.push(...entityGaps);
   else if (entityScore < 80) p2Gaps.push(...entityGaps);
-  if (!llmsTxt.present) p1Gaps.push("No llms.txt found — AI crawlers lack structured context about your site");
+  if (!llmsTxt.present && !llmsTxt.notChecked) p1Gaps.push("No /llms.txt file (HTTP 404). No major AI engine has said it reads llms.txt, so it is optional.");
   if (llmsTxt.aiCrawlersBlocked.length > 0)
     p1Gaps.push(...llmsTxt.recommendations);
   if (paaScore < 60) p1Gaps.push(...paaGaps);
   else if (paaScore < 80) p2Gaps.push(...paaGaps);
   if (conversationalScore < 60) p1Gaps.push(...conversationalIssues);
   else if (conversationalScore < 80) p2Gaps.push(...conversationalIssues);
-  if (stalenessRisk) p2Gaps.push(`Content last updated ${freshnessDate} — refresh content to maintain AI engine trust`);
+  if (stalenessRisk) p2Gaps.push(`Content date on the page is ${freshnessDate}, over 12 months ago. Check it is still accurate.`);
 
   // Confidence score — how much signal was available for this audit
   // Low word count, no schema, no headings = low confidence in findings
@@ -973,16 +980,16 @@ export async function runInspectSiteStructure(input: {
     (freshnessDate ? 5 : 0)
   );
 
-  // Overall score — weighted average
-  const overallScore = Math.round(
-    (eatScore * 0.2 +
-      entityScore * 0.25 +
-      freshnessScore * 0.1 +
-      paaScore * 0.15 +
-      conversationalScore * 0.15 +
-      (llmsTxt.present ? 100 : 50) * 0.1 +
-      (gaps.filter((g) => g.priority === "P1").length === 0 ? 100 : Math.max(0, 100 - gaps.filter((g) => g.priority === "P1").length * 25)) * 0.05)
-  );
+  // Overall score — weighted average of the parts that were measured (a part not measured is left out, never filled in)
+  const overallScore = weightedScore([
+    [eatScore, 0.2],
+    [entityScore, 0.25],
+    [freshnessScore, 0.1],
+    [paaScore, 0.15],
+    [conversationalScore, 0.15],
+    [llmsTxt.notChecked ? null : llmsTxt.present ? 100 : 50, 0.1],
+    [gaps.filter((g) => g.priority === "P1").length === 0 ? 100 : Math.max(0, 100 - gaps.filter((g) => g.priority === "P1").length * 25), 0.05],
+  ]);
 
   const auditTimestamp = new Date().toISOString();
 
@@ -1108,17 +1115,20 @@ export async function runInspectSiteStructure(input: {
           .join("\n\n")
       : "";
 
+  const industry = regulatedIndustry({ title: crawl.title, headings: crawl.headings.map((h) => h.text) });
   return `## inspectSiteStructure — ${url}
 
-**Overall AI Visibility Score: ${overallScore}/100** (Audit confidence: ${confidenceScore}/100${confidenceScore < 50 ? " — low signal, JS-heavy site or thin content" : ""})
+Fetched: ${crawl.url} at ${auditTimestamp} (this one page only, raw HTML; JavaScript was not run, so content it loads was not checked). Other pages of the site were not checked.
+${industry ? `${regulatedLine(industry)}. Do not suggest testimonials, reviews on the site, comparison or "vs" pages, "best"/"leading" claims, case results or guarantees.\n` : ""}
+**Overall AI Visibility Score: ${overallScore}/100** (AEONOS checklist score for this page, not a measure of AI citations. Audit confidence: ${confidenceScore}/100${confidenceScore < 50 ? " — low signal, JS-heavy site or thin content" : ""})
 - E-E-A-T: ${eatScore}/100
 - Entity Clarity: ${entityScore}/100
-- Content Freshness: ${freshnessScore}/100 (last updated: ${freshnessDate ?? "unknown"})
+- Content Freshness: ${freshnessScore === null ? "not measured (no date found on the page)" : `${freshnessScore}/100 (date on the page: ${freshnessDate})`}
 - PAA Readiness: ${paaScore}/100
 - Conversational: ${conversationalScore}/100
 - Schema: ${presentTypes.length} types found (${malformedSchemas.length} malformed)
-- llms.txt: ${llmsTxt.present ? "✅ Present" : "❌ Missing"}
-- AI crawlers blocked: ${llmsTxt.aiCrawlersBlocked.length > 0 ? llmsTxt.aiCrawlersBlocked.join(", ") : "None"}
+- llms.txt: ${llmsTxt.notChecked ? `not checked (${llmsTxt.notChecked})` : llmsTxt.present ? "✅ Present" : "❌ Missing"}
+- AI crawlers blocked: ${llmsTxt.robotsNotChecked ? `not checked (robots.txt ${llmsTxt.robotsNotChecked})` : llmsTxt.aiCrawlersBlocked.length > 0 ? llmsTxt.aiCrawlersBlocked.join(", ") : "None"}
 
 **Schema present:** ${presentTypes.join(", ") || "None"}
 

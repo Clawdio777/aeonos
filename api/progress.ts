@@ -14,7 +14,7 @@ import { runAgent } from "../src/agent.js";
 const PRICE_USDC    = 1.50;
 const BASE_URL      = () => process.env.AGENT_BASE_URL || "https://aeonos.basechainlabs.com";
 const RESOURCE_URL  = () => `${BASE_URL()}/api/progress`;
-const RESOURCE_DESC = "AI search visibility progress report — Four Layers scoring (SXO/AIO/GEO/AEO), what's working, gaps, and your next 3 highest-impact actions. 1.50 USDC.";
+const RESOURCE_DESC = "AI search visibility progress report — Four Layers report (SXO/AIO/GEO/AEO) with scores only where measured, what's working, gaps, and your next 3 actions. 1.50 USDC.";
 
 const BAZAAR = buildBazaarExtension({
   serviceName:      "AEONOS — Progress Report",
@@ -45,7 +45,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (payment === null) return;
 
   try {
-    const directive = `Generate a structured AEO progress report using the Four Layers framework. Score each layer (SXO, AIO, GEO, AEO) out of 100. For each layer: current score, what's working, what's not. End with the next 3 highest-impact actions to improve AI search visibility. Use any stored memory for this caller to personalise the report.\n\nQuery: ${query}`;
+    const directive = `Generate a structured AEO progress report using the Four Layers framework. For each layer (SXO, AIO, GEO, AEO): what the tools measured this run, what's working, what's not. Give a layer a score only from a tool's output this run; where no tool measured it, write "not measured", never an estimated number. End with the next 3 actions, each tied to a finding from this run. Use any stored memory for this caller to personalise the report, giving the date of anything taken from memory.\n\nQuery: ${query}`;
     const result = await runAgent({ query: directive, caller_id });
 
     // Charge only now that the result is ready (see _x402-gate.ts "Charge only after the work succeeds").

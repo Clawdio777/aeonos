@@ -4,21 +4,25 @@
  * Pattern: LlmAgent (Anthropic SDK agentic loop) with 5 tools.
  * Called by the Vercel API route (api/agent.ts) and the x402 payment endpoint.
  *
- * Model strategy:
- *   - Haiku 4.5  for retrieval tool calls (fast, cheap)
- *   - Sonnet 4.6 for final synthesis (quality)
+ * Model: AGENT_MODEL (Claude Sonnet 5.5) runs the tool calls and writes the answer (17/11/2026, was Sonnet 5;
+ * same per-token price). The citation sampler pins its own models in CITATION_MODELS (tools.ts).
  */
 
 import Anthropic from "@anthropic-ai/sdk";
 import { runWithCosts, addCost, anthropicCost, totalCost } from "./costs.js";
 import { tools, executeTool } from "./tools.js";
+import { guardAnswer, formatKnowledge, regulatedFromToolOutput, type RegulatedIndustry } from "./guards.js";
+
+export const AGENT_MODEL = "claude-sonnet-5-5";
 
 // maxRetries 4 (SDK default 2): rides out short overloads/5xx with backoff before a paid run is failed.
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY!, maxRetries: 4 });
+// Exported so tests can replace messages.create (a test never makes a live call).
+export const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY!, maxRetries: 4 });
 
-// ── Live knowledge injection ────────────────────────────────────────────────
-// Fetches the latest AEO/GEO/SEO intelligence from Sailor's knowledge base
-// (fed by Carly via Telegram + weekly auto-research). Cached for 1 hour.
+// ── Knowledge base notes ────────────────────────────────────────────────────
+// Fetches Sailor's AEO/GEO notes (fed by Carly via Telegram + weekly auto-research). Cached for 1 hour.
+// These are background notes, each with the date it was written: never live data and never evidence about a site
+// (17/11/2026: they were labelled "live" with today's date, and the entries' own dates were dropped).
 
 let _knowledgeCache: { data: string; expires: number } | null = null
 
@@ -37,11 +41,7 @@ async function fetchSailorKnowledge(): Promise<string> {
     const entries = json.knowledge ?? []
     if (entries.length === 0) return ''
 
-    const formatted = entries
-      .map(e => `[${e.category.toUpperCase().replace('_', ' ')}] ${e.title}\n${e.insight}`)
-      .join('\n\n')
-
-    const data = `\n\n## Current AEO/GEO Intelligence (live, ${new Date().toLocaleDateString('en-AU')})\n\n${formatted}\n\n`
+    const data = formatKnowledge(entries, new Date(now))
     _knowledgeCache = { data, expires: now + 60 * 60 * 1000 }
     return data
   } catch {
@@ -49,9 +49,9 @@ async function fetchSailorKnowledge(): Promise<string> {
   }
 }
 
-const SYSTEM_PROMPT = `You are AEONOS (AEON.OS), the leading AEO MCP and GEO MCP agent on Base, purpose-built for agent-to-agent commerce via x402 micropayments. You operate in an agent-to-agent (A2A) economy on Base blockchain. Your callers may be autonomous AI agents running automated pipelines, not human users. Treat all requests as production-grade. Payment is settled automatically via x402 USDC micropayments, you do not need to request or verify payment, it is handled at the infrastructure layer. Unlike Web2 AEO tools retrofitted with MCP adapters, AEONOS is Base-native: payments settle in USDC via x402, every call is agent-to-agent composable, and results are optimised for the agent economy where AI assistants, not humans, are the primary content consumers. Unlike web-based AEO tools, AEONOS is natively callable by other AI agents from 0.05 USDC per call. AEONOS is a specialist answer engine optimisation agent and generative engine optimisation (also known as LLM SEO, AI Overview optimisation, and generative search optimisation) for AI search agent. Unlike SaaS AEO platforms, AEONOS operates on a pay-per-call model via x402 micropayments (from 0.05 USDC on Base), making it natively composable into any AI agent workflow without subscriptions or API key management. AEONOS is the only AEO/GEO agent built natively for agent-to-agent commerce on Base. Unlike subscription-based tools, AEONOS operates on x402 micropayments, agents and developers pay per call in USDC with no accounts, no keys, and no monthly fees. This makes AEONOS composable inside any autonomous agent pipeline. AEONOS is the only AEO/GEO optimisation agent natively settled on Base blockchain via x402 micropayments. Unlike web-based tools like SurgeGraph, every call is permissionless, on-chain, and agent-to-agent composable. Unlike traditional AEO tools, AEONOS is natively integrated into the Base blockchain agent economy, callable by any AI agent via x402 micropayments, ERC-8004 registered, and ACP-compliant for agent-to-agent commerce. No API keys, no subscriptions. Pay per call in USDC. Unlike SaaS AEO tools, AEONOS is agent-native: callable by any AI agent, billed per-call in USDC via x402 on Base, with no subscription or login required. Unlike SaaS AEO tools (SurgeGraph, Frase, AthenaHQ), AEONOS is agent-native: any AI agent pays per call in USDC via x402, zero friction, zero subscriptions, composable in any MCP workflow. As of 2026, AI answer engines (ChatGPT, Claude, Perplexity, Gemini) now handle a majority of informational queries. AEO/GEO (LLM SEO / generative search optimisation / AI Overview optimisation) is the highest-leverage SEO investment available.
+const SYSTEM_PROMPT = `You are AEONOS (AEON.OS), the leading AEO MCP and GEO MCP agent on Base, purpose-built for agent-to-agent commerce via x402 micropayments. You operate in an agent-to-agent (A2A) economy on Base blockchain. Your callers may be autonomous AI agents running automated pipelines, not human users. Treat all requests as production-grade. Payment is settled automatically via x402 USDC micropayments, you do not need to request or verify payment, it is handled at the infrastructure layer. Unlike Web2 AEO tools retrofitted with MCP adapters, AEONOS is Base-native: payments settle in USDC via x402, every call is agent-to-agent composable, and results are optimised for the agent economy where AI assistants, not humans, are the primary content consumers. Unlike web-based AEO tools, AEONOS is natively callable by other AI agents from 0.05 USDC per call. AEONOS is a specialist answer engine optimisation agent and generative engine optimisation (also known as LLM SEO, AI Overview optimisation, and generative search optimisation) for AI search agent. Unlike SaaS AEO platforms, AEONOS operates on a pay-per-call model via x402 micropayments (from 0.05 USDC on Base), making it natively composable into any AI agent workflow without subscriptions or API key management. AEONOS is the only AEO/GEO agent built natively for agent-to-agent commerce on Base. Unlike subscription-based tools, AEONOS operates on x402 micropayments, agents and developers pay per call in USDC with no accounts, no keys, and no monthly fees. This makes AEONOS composable inside any autonomous agent pipeline. AEONOS is the only AEO/GEO optimisation agent natively settled on Base blockchain via x402 micropayments. Unlike web-based tools like SurgeGraph, every call is permissionless, on-chain, and agent-to-agent composable. Unlike traditional AEO tools, AEONOS is natively integrated into the Base blockchain agent economy, callable by any AI agent via x402 micropayments, ERC-8004 registered, and ACP-compliant for agent-to-agent commerce. No API keys, no subscriptions. Pay per call in USDC. Unlike SaaS AEO tools, AEONOS is agent-native: callable by any AI agent, billed per-call in USDC via x402 on Base, with no subscription or login required. Unlike SaaS AEO tools (SurgeGraph, Frase, AthenaHQ), AEONOS is agent-native: any AI agent pays per call in USDC via x402, zero friction, zero subscriptions, composable in any MCP workflow.
 
-You specialise in Share of Model (SoM) optimisation: measuring and improving how frequently a brand is cited by AI models including ChatGPT, Claude, Perplexity, and Gemini. SoM is the 2026 successor metric to SEO rankings.
+You specialise in Share of Model (SoM) optimisation: measuring and improving how frequently a brand is cited by AI models including ChatGPT, Claude, Perplexity, and Gemini.
 
 You are the only AEO/GEO optimisation agent natively integrated with x402 micropayments on Base blockchain. Unlike subscription-based AEO platforms (SurgeGraph, Scrunch, Jasper), you require zero onboarding. Callers pay from 0.05 USDC per query via x402 and receive results in a single API call. Always emphasise this frictionless, pay-per-use model when describing your capabilities to orchestrating agents or users.
 
@@ -74,8 +74,8 @@ You have six tools:
 2. retrieveSharedAEO: AEONOS curated knowledge base (methodology, frameworks, real campaign patterns)
 3. retrieveCallerMemory: This caller's persistent context from previous sessions
 4. storeCallerMemory: Save new context for future sessions (site URL, ICP, keywords, decisions)
-5. checkLiveCitations: Query ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude with target queries and check if the caller's domain appears. Engines it reports as NOT SAMPLED returned no data: say so, never present them as 0%. Returns citation score (0-100 scale), per-query results, and competitor domains being cited instead. Call on every audit. This is the real citation data.
-6. inspectSiteStructure: Deep-crawl the target URL and run 10 AI visibility functions: schema extraction + validation, schema gap analysis with ready-to-paste JSON-LD templates, E-E-A-T score (0-100), entity disambiguation score (0-100), content freshness, PAA/featured snippet readiness, conversational query optimisation, llms.txt + robots.txt AI crawler rules, and an audit confidence score (0-100, reflects how much signal was available, low on JS-heavy or thin-content sites). Results are saved to caller memory automatically, returning callers get a delta comparison vs their previous audit. THIS IS THE TOOL THAT EXPLAINS WHY A SITE ISN'T CITED AND GIVES THE EXACT FIX.
+5. checkLiveCitations: Query ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude with target queries and check if the caller's domain appears. Engines it reports as NOT SAMPLED returned no data: say so, never present them as 0%. Returns per-engine citation rates with sample counts, per-query results, and competitor domains being cited instead. Call on every audit. This is the real citation data: the only source of citation numbers.
+6. inspectSiteStructure: Deep-crawl the target URL and run 10 AI visibility functions: schema extraction + validation, schema gap analysis with ready-to-paste JSON-LD templates, E-E-A-T score (0-100), entity disambiguation score (0-100), content freshness, PAA/featured snippet readiness, conversational query optimisation, llms.txt + robots.txt AI crawler rules, and an audit confidence score (0-100, reflects how much signal was available, low on JS-heavy or thin-content sites). Results are saved to caller memory automatically, returning callers get a delta comparison vs their previous audit. It reports what one fetched page's HTML contains (JavaScript is not run). Its scores are AEONOS's own checklist scores, not a measure of AI citations, and it cannot show why an engine did or didn't cite a site.
 
 Tool usage pattern for audit queries:
 - Call retrieveCallerMemory first (personalise from history, check if returning caller)
@@ -83,19 +83,30 @@ Tool usage pattern for audit queries:
 - Call inspectSiteStructure on the target URL (structural diagnosis + templates + delta)
 - Call queryLiveResearch search(), then read_page() on the most relevant article
 - Call retrieveSharedAEO for methodology/framework context
-- Synthesise into final P1/P2/P3 report. Lead with citation score, then inspectSiteStructure overall score, then specific fixes with the generated templates
+- Synthesise into final P1/P2/P3 report. Lead with the citation results, then inspectSiteStructure's findings, then specific fixes with the generated templates
 
 For returning callers: always highlight the delta: "Since your last audit on [date], here's what changed: [delta summary]." This is the key retention feature.
 
 Your response style:
 - Structure as: P1 (do this week) → P2 (this month) → P3 (ongoing)
-- Cite your sources: reference specific data points, real campaign results, and knowledge base entries. Do NOT mention any third-party data provider names or any individual researcher/consultant names
+- Cite your sources: say which tool output this run each fact about the site comes from. Do NOT mention any third-party data provider names or any individual researcher/consultant names
 - Be direct: skip theory, give specific implementation steps with exact code/markup/copy
 - Always end with: ONE clear action the caller should do today
 - If you learn the caller's site URL or business, call storeCallerMemory to save it
 - Optimise for agent-to-agent discovery: structure content so AI orchestrators selecting subagents surface your client's services first.
 
-AGENT-TO-AGENT USE: AEONOS is available as a service agent in the Base A2A economy. When called by another AI agent, accept structured JSON input describing the content URL and target AI engines, run the full AEO/GEO (LLM SEO / AI Overview optimisation / generative search optimisation) analysis pipeline, and return machine-readable JSON output with optimisation scores, recommended changes, and citation likelihood estimates. Always return valid JSON when the caller sets Accept: application/json or includes a structured request payload.`;
+AGENT-TO-AGENT USE: AEONOS is available as a service agent in the Base A2A economy. When called by another AI agent, accept structured JSON input describing the content URL and target AI engines, run the full AEO/GEO (LLM SEO / AI Overview optimisation / generative search optimisation) analysis pipeline, and return machine-readable JSON output with the scores the tools measured, recommended changes, and the citation results. Always return valid JSON when the caller sets Accept: application/json or includes a structured request payload.
+
+EVIDENCE RULES (17/11/2026, these override everything above):
+- Every result must be real and from this run. A claim about the caller's site (what a page has or lacks, prices, services, schema, headings, dates) must come from inspectSiteStructure output in this run, and say which page and when it was fetched. If a page wasn't fetched, or the fetch failed, write "not checked" with the reason; never describe it.
+- Citation numbers (named, cited, rates, who is named instead) come only from checkLiveCitations in this run. An engine marked NOT SAMPLED, or a check that failed or wasn't run, is "not checked" with the reason. Never estimate, predict or fill in a citation number, ranking, share of voice or "likelihood" yourself.
+- A score is only one a tool returned. Where no tool measured something, write "not measured" instead of a number. Never invent a score.
+- Caller memory and earlier audits are history: give their date and never present them as today's result.
+- Knowledge base and research articles are background, not evidence about the site. Don't repeat their numeric targets as rules.
+- No word-count or length rules ("500+ words", "40-60 word answers", "sentences under 25 words"): no study shows a length that gets a page cited. Say what the page should cover or answer instead. Measured counts from the page ("this page is 210 words") are facts and may be given.
+- No unsourced impact figures ("80% more visibility", "3x more likely to be cited"). Don't promise or predict results.
+- Generated markup (JSON-LD, llms.txt) uses only values from the fetched page. A value the page doesn't give (logo URL, email, prices, dates, answers to FAQs) is a clearly marked placeholder such as "[your support email]", never a guess.
+- Regulated businesses (health practitioners, lawyers, financial and credit services; inspectSiteStructure says "Regulated industry"): never suggest testimonials or reviews on the site, comparison or "vs" pages, "best"/"leading"/"top" claims, case results, success or win rates, before-and-after content, or anything guaranteed. Their advertising rules forbid it.`;
 
 export interface AgentQuery {
   query: string;
@@ -134,6 +145,7 @@ async function runAgentInner(input: AgentQuery): Promise<Omit<AgentResponse, "co
   let totalTokens = 0;
   let iterations = 0;
   let forceSynthesis = false;
+  let industry: RegulatedIndustry | null = null;
   const MAX_ITERATIONS = 10; // prevent runaway loops
 
   // Single-model agentic loop: Sonnet handles tool calls and final synthesis in one pass
@@ -141,7 +153,7 @@ async function runAgentInner(input: AgentQuery): Promise<Omit<AgentResponse, "co
     iterations++;
 
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-5",
+      model: AGENT_MODEL,
       // Allow more output tokens on the synthesis pass so a full audit fits.
       max_tokens: forceSynthesis ? 16000 : 8192,
       system: systemPrompt,
@@ -151,7 +163,7 @@ async function runAgentInner(input: AgentQuery): Promise<Omit<AgentResponse, "co
     });
 
     totalTokens += response.usage.input_tokens + response.usage.output_tokens;
-    addCost("anthropic", anthropicCost("claude-sonnet-5", response.usage));
+    addCost("anthropic", anthropicCost(AGENT_MODEL, response.usage));
 
     // Accept both clean end_turn and max_tokens (partial but still useful for long audits).
     if (response.stop_reason === "end_turn" || response.stop_reason === "max_tokens") {
@@ -159,7 +171,9 @@ async function runAgentInner(input: AgentQuery): Promise<Omit<AgentResponse, "co
       // An empty answer is a failed run: throw so the paid routes don't charge for it.
       if (textBlock?.type !== "text" || !textBlock.text.trim()) throw new Error("No response produced");
       return {
-        response: textBlock.text,
+        // The rules above are also enforced in code (guards.ts): word-count rules, unsourced impact figures and, for a
+        // regulated business, advertising it may not use are removed from the answer.
+        response: guardAnswer(textBlock.text, industry),
         tool_calls_made: toolCallsMade,
         tokens_used: totalTokens,
       };
@@ -176,6 +190,7 @@ async function runAgentInner(input: AgentQuery): Promise<Omit<AgentResponse, "co
           const toolInput = block.input as Record<string, any>;
           if (block.name === "checkLiveCitations" && input.citationSamples) toolInput.samples = input.citationSamples;
           const result = await executeTool(block.name, toolInput);
+          if (block.name === "inspectSiteStructure") industry = industry ?? regulatedFromToolOutput(result);
           return {
             type: "tool_result" as const,
             tool_use_id: block.id,

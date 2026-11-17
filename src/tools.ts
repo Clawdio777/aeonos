@@ -13,6 +13,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 import { runInspectSiteStructure } from "./inspect.js";
 import { addCost, anthropicCost, perplexityCost, openaiSearchCost, geminiGroundedCost } from "./costs.js";
+import { formatSharedAEO } from "./guards.js";
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 
@@ -131,7 +132,7 @@ export const tools: Anthropic.Tool[] = [
   {
     name: "checkLiveCitations",
     description:
-      "Check whether a domain is being cited by Perplexity, ChatGPT, Google AI Overviews, and Bing/Copilot. " +
+      "Check whether a domain is named or cited by ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude (Bing/Copilot is not measured). " +
       "This is REAL citation data from ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude — not structural inference. Engines marked NOT SAMPLED returned nothing: report them as unknown, never as 0%. Call this during every audit to ground " +
       "your recommendations in actual AI search behaviour. " +
       "Pass the domain being audited and 4-6 queries that represent how their target customers " +
@@ -156,6 +157,14 @@ export const tools: Anthropic.Tool[] = [
         caller_id: {
           type: "string",
           description: "Optional. When provided, results are saved to citation_history for trend tracking and delta comparison vs previous runs.",
+        },
+        brand_name: {
+          type: "string",
+          description: "Optional. The business's name exactly as its own site writes it (e.g. 'Sherbourne House'). An answer that names it without linking the site counts as named. Only pass a name taken from the site or the caller, never a guess.",
+        },
+        country: {
+          type: "string",
+          description: "Optional. Two-letter country the buyers are in (e.g. 'AU'). Perplexity, ChatGPT and Claude are asked as someone there.",
         },
       },
       required: ["domain", "queries"],
@@ -339,7 +348,7 @@ async function runRetrieveSharedAEO(input: Record<string, any>): Promise<string>
   if (error) return `retrieveSharedAEO error: ${error.message}`;
   if (!data?.length) return "No knowledge entries found for that category.";
 
-  return JSON.stringify(data, null, 2);
+  return formatSharedAEO(data);
 }
 
 // ── Caller Memory ──────────────────────────────────────────────────────────────
@@ -1153,11 +1162,14 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
   const { domain, queries, caller_id } = input as { domain: string; queries: string[]; caller_id?: string };
   const samples = Math.max(1, Number(input.samples) || CITATION_SAMPLES);
   if (!process.env.PPLX_API_KEY && !process.env.OPENAI_API_KEY && !process.env.GEMINI_API_KEY && !process.env.ANTHROPIC_API_KEY) {
-    return "No citation API keys configured (PPLX_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY or ANTHROPIC_API_KEY required).";
+    return "Not checked: no citation API keys configured (PPLX_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY or ANTHROPIC_API_KEY required). Report every engine as not checked; never estimate.";
   }
   if (!queries?.length) return "queries array is required";
 
-  const c = await collectCitations(domain, queries, samples);
+  // brand_name / country from the agent (17/11/2026): without a name only links and the written domain counted
+  const brandName = typeof input.brand_name === "string" && input.brand_name.trim() ? input.brand_name.trim().slice(0, 80) : undefined;
+  const country = typeof input.country === "string" && /^[A-Za-z]{2}$/.test(input.country.trim()) ? input.country.trim().toUpperCase() : undefined;
+  const c = await collectCitations(domain, queries, samples, { brandName, country });
   const engines: { key: keyof Collected & string; label: string; rows: CitRow[]; llm: boolean; unavailableKey: string }[] = [
     { key: "gpt", label: "ChatGPT", rows: c.gpt, llm: true, unavailableKey: "chatgpt" },
     { key: "gemini", label: "Gemini", rows: c.gemini, llm: true, unavailableKey: "gemini" },
@@ -1247,6 +1259,7 @@ async function runCheckLiveCitations(input: Record<string, any>): Promise<string
   const maxSamples = Math.max(1, ...measured.map((e) => stats[e.key].samples));
   const lines: string[] = [
     `## Live Citation Check — ${domain}`,
+    `Checked: ${timestamp} (answers fetched live this run). Asked from: ${Object.entries(citationLocations({ country })).map(([k, v]) => `${k} ${v}`).join(", ")}. Business name matched: ${brandName ?? "none given (only links and the written domain count)"}.`,
     ...engines.map(summaryLine),
     `Method: ${samples} samples per query on ChatGPT, Gemini, Perplexity and Claude, one fetch per query for Google AI Overviews and AI Mode (✅ = cited in a majority of samples); a change under ~${Math.round(100 / Math.sqrt(maxSamples))}pp between runs is within sampling noise. Engines marked NOT SAMPLED returned nothing and must be reported as unknown, never as 0%. Bing/Copilot is not measured (no reliable source).`,
     "",
@@ -1290,10 +1303,13 @@ export type CitationSnapshot = {
   valid: boolean;
   invalidReasons: string[];
   method: CitationMethod;
+  /** When the answers were fetched (ISO, start of the run). Where from: method.locations (17/11/2026). */
+  checkedAt: string;
 };
 
 /** Single-sample check — share-of-voice runs 2–5 brands in parallel, so sampling is kept at 1 to bound cost. */
 export async function checkCitationsRaw(domain: string, queries: string[], samples = 1, opts: CitationOptions = {}): Promise<CitationSnapshot> {
+  const checkedAt = new Date().toISOString();
   const c = await collectCitations(domain, queries, samples, opts);
   const out = rowOut(opts.includeAnswers);
   const all = [...c.pplx, ...c.gpt, ...c.gemini, ...c.claude, ...c.aio, ...c.aimode];
@@ -1336,5 +1352,6 @@ export async function checkCitationsRaw(domain: string, queries: string[], sampl
     valid,
     invalidReasons,
     method: citationMethod(samples, opts),
+    checkedAt,
   };
 }

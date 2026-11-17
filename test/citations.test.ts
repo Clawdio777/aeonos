@@ -659,3 +659,26 @@ describe("6. Retries, per-provider limits and the run time budget (12/10/2026)",
     });
   });
 });
+
+describe("8. The agent's citation tool: name, country, and when and where it was checked (17/11/2026)", () => {
+  test("brand_name and country reach the sampler, and the output says when, where from and which name was matched", async () => {
+    state.answerText = "**Acme Clinic** is one option.";
+    const out = await tools.executeTool("checkLiveCitations", { domain: "acmeclinic.example.au", queries: ["q1"], samples: 1, brand_name: "Acme Clinic", country: "au" });
+    expect(state.requests.pplx[0].web_search_options).toEqual({ user_location: { country: "AU" } });
+    expect(out).toMatch(/Checked: \d{4}-\d{2}-\d{2}T[\d:.]+Z \(answers fetched live this run\)\. Asked from: perplexity AU, chatgpt AU, claude AU, gemini not set/);
+    expect(out).toContain("Business name matched: Acme Clinic.");
+    expect(out).toContain("ChatGPT: 100% citation rate");
+  });
+
+  test("an engine that fails every call is NOT SAMPLED, never 0%", async () => {
+    state.fail = { pplx: { count: 99, kind: "500" } };
+    const out = await tools.executeTool("checkLiveCitations", { domain: "pemba.ai", queries: ["q1"], samples: 1 });
+    expect(out).toMatch(/Perplexity: NOT SAMPLED/);
+    expect(out).not.toMatch(/Perplexity: 0%/);
+  });
+
+  test("the citation snapshot carries when it was checked", async () => {
+    const r = await tools.checkCitationsRaw("pemba.ai", ["q1"], 1);
+    expect(r.checkedAt).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/);
+  });
+});

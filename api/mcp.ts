@@ -97,7 +97,7 @@ const TOOLS = [
   },
   {
     name:        "aeonos_progress",
-    description: "Score a website on the AEO Four Layers framework (SXO/AIO/GEO/AEO). Returns per-layer scores and the next 3 highest-impact actions. 1.50 USDC per call.",
+    description: "Score a website on the AEO Four Layers framework (SXO/AIO/GEO/AEO). Returns per-layer scores where measured (not measured otherwise) and the next 3 actions. 1.50 USDC per call.",
     annotations: TOOL_ANNOTATIONS,
     inputSchema: {
       type:       "object",
@@ -122,13 +122,13 @@ const TOOL_ROUTES: Record<string, string> = {
 function buildAeonosDirective(toolName: string, query: string): string {
   switch (toolName) {
     case "aeonos_audit":
-      return `Perform a comprehensive AEO/GEO audit. Cover all four layers: on-page content optimisation, technical SEO, authority signals, and AI-specific optimisations (schema, llms.txt, E-E-A-T, AI inclusion check). Deliver a scored report and a prioritised P1/P2/P3 action plan.\n\nQuery: ${query}`;
+      return `Perform a comprehensive AEO/GEO audit. Cover all four layers: on-page content optimisation, technical SEO, authority signals, and AI-specific optimisations (schema, llms.txt, E-E-A-T, AI inclusion check). Deliver a report and a prioritised P1/P2/P3 action plan. Give only scores the tools returned this run; anything no tool measured is "not measured", anything not fetched is "not checked".\n\nQuery: ${query}`;
     case "aeonos_schema":
-      return `Generate complete, production-ready JSON-LD Schema.org markup. Include all relevant schema types for the page. Output valid JSON-LD inside a code block, followed by a brief explanation of each schema type used and why.\n\nQuery: ${query}`;
+      return `Generate complete, production-ready JSON-LD Schema.org markup. Include all relevant schema types for the page. Output valid JSON-LD inside a code block, followed by a brief explanation of each schema type used and why. Use only values found on the fetched page; mark every other value as a placeholder such as "[your phone number]", never a guess.\n\nQuery: ${query}`;
     case "aeonos_llms_txt":
-      return `Generate a complete, production-ready llms.txt file following the llms.txt standard. Structure it for AI crawler ingestion by ChatGPT, Perplexity, and Claude. Include: product summary, key pages with descriptions, FAQ section answering the most common user questions, entity definitions, and structured context that helps AI systems cite this business accurately.\n\nQuery: ${query}`;
+      return `Generate a complete, production-ready llms.txt file following the llms.txt standard. Structure it for AI crawler ingestion by ChatGPT, Perplexity, and Claude. Include: product summary, key pages with descriptions, FAQ section, entity definitions, and structured context. Every fact (services, prices, pages, answers) must come from the fetched page; anything the page doesn't say is a marked placeholder such as "[answer from your site]", never a guess.\n\nQuery: ${query}`;
     case "aeonos_progress":
-      return `Generate a structured AEO progress report using the Four Layers framework. Score each layer (SXO, AIO, GEO, AEO) out of 100. For each layer: current score, what's working, what's not. End with the next 3 highest-impact actions to improve AI search visibility. Use any stored memory for this caller to personalise the report.\n\nQuery: ${query}`;
+      return `Generate a structured AEO progress report using the Four Layers framework. For each layer (SXO, AIO, GEO, AEO): what the tools measured this run, what's working, what's not. Give a layer a score only from a tool's output this run; where no tool measured it, write "not measured", never an estimated number. End with the next 3 actions, each tied to a finding from this run. Use any stored memory for this caller to personalise the report, giving the date of anything taken from memory.\n\nQuery: ${query}`;
     default:
       return query;
   }
@@ -267,12 +267,12 @@ Calls on this hosted endpoint are paid from AEONOS credits (card). To pay per ca
 
     const PROMPT_MESSAGES: Record<string, string> = {
       "aeo-quick-wins":   `Give me 3 immediate AEO/GEO quick wins for ${url}. Focus on changes I can make this week to improve AI search visibility and get cited by ChatGPT, Perplexity, and Google AI Overviews.`,
-      "full-audit":       `Run a full AEO/GEO audit on ${url}. Score each of the four layers (on-page content, technical SEO, authority signals, AI-specific signals) and give me a prioritised P1/P2/P3 action roadmap.`,
+      "full-audit":       `Run a full AEO/GEO audit on ${url}. Cover the four layers (on-page content, technical SEO, authority signals, AI-specific signals) with the scores the tools measured, and give me a prioritised P1/P2/P3 action roadmap.`,
       "generate-schema":  `Generate complete, production-ready JSON-LD Schema.org markup for ${url}${type ? ` (${type} page)` : ""}. Include all relevant schema types and provide implementation instructions.`,
       "create-llms-txt":  `Write a complete llms.txt file for ${url}${business ? ` — ${business}` : ""}. Structure it for ingestion by ChatGPT (GPTBot), Perplexity (PerplexityBot), and Claude (ClaudeBot). Include product summary, FAQ, key pages, and entity definitions.`,
-      "progress-report":  `Generate an AEO Four Layers progress report for ${url}. Score SXO, AIO, GEO, and AEO out of 100. Tell me what's working, what's not, and the next 3 highest-impact actions.`,
-      "optimise-content": `Optimise the following content for AI engine citation${target ? ` targeting the query: "${target}"` : ""}. Rewrite or annotate it so ChatGPT, Perplexity, Claude, and Google AI Overviews are more likely to cite it. Return the optimised version with a brief explanation of changes made.\n\nContent:\n${content}`,
-      "citation-check":   `Analyse ${url} and tell me: will ChatGPT, Perplexity, Claude, and Google AI Overviews cite this content? Give a yes/no verdict per engine, explain exactly why not where applicable, and list the top 3 changes that would most improve citation likelihood.`,
+      "progress-report":  `Generate an AEO Four Layers progress report for ${url}. Cover SXO, AIO, GEO, and AEO with what the tools measured this run ("not measured" where none did). Tell me what's working, what's not, and the next 3 actions.`,
+      "optimise-content": `Optimise the following content for AI engine citation${target ? ` targeting the query: "${target}"` : ""}. Rewrite or annotate it for clarity to AI answer engines (ChatGPT, Perplexity, Claude, Google AI Overviews) without adding facts that aren't in it. Return the optimised version with a brief explanation of changes made.\n\nContent:\n${content}`,
+      "citation-check":   `Run a live citation check for ${url}: does each of ChatGPT, Gemini, Perplexity, Claude, Google AI Overviews and Google AI Mode name or cite it today? Report what the answers did per engine this run ("not checked" for any engine that wasn't), who they named instead, and 3 changes tied to what the site check found.`,
     };
 
     const text = PROMPT_MESSAGES[name];

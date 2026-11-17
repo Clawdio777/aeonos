@@ -29,6 +29,7 @@ export function totalCost(costs: CostStore): number {
 // USD per million tokens (input, output). Update when Anthropic changes prices.
 const ANTHROPIC_PRICES: Record<string, [number, number]> = {
   "claude-haiku-4-5-20251001": [1, 5],
+  "claude-sonnet-5-5": [2, 10],
   "claude-sonnet-5": [2, 10],
   "claude-sonnet-4-6": [3, 15],
   "claude-opus-5": [5, 25],
