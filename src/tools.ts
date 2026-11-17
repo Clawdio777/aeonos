@@ -400,6 +400,11 @@ type CitRow = {
   stance?: Stance | null;
   /** Samples that named the business without linking its domain. They count as cited (06/10/2026). */
   namedSamples?: number;
+  /** v4 (17/11/2026): samples whose sources or text link the domain, and samples whose text names the business, each counted on its own. */
+  linkedSamples?: number;
+  inTextSamples?: number;
+  /** v4: per sample, in the order of answers[]: was the domain linked, and did the text name the business. */
+  sampleFlags?: { linked: boolean; inText: boolean }[];
   /** Full text of every sampled answer, only when the caller asks for include_answers (06/10/2026). */
   answers?: string[];
   /** Google surfaces only: did the fetched SERP carry an AI answer? false = not shown, counted as not cited (v3). */
@@ -412,6 +417,12 @@ export type CitationOptions = {
   brandName?: string;
   /** DataForSEO location for Google AI Overviews and AI Mode. Default 2840 (United States). */
   locationCode?: number;
+  /**
+   * Two-letter country the answers are asked from (17/11/2026). Sent as the user location to Perplexity, ChatGPT
+   * web search and Claude web search. Default: the country of locationCode when known, else none (the provider's own
+   * default, which is the US servers this runs on). Gemini's Google Search grounding has no country setting.
+   */
+  country?: string;
   /** Return every sampled answer's full text so it can be read later. */
   includeAnswers?: boolean;
   /**
@@ -451,10 +462,34 @@ export const CITATION_MODELS = {
   google_ai: "serp",
   google_ai_mode: "serp",
 } as const;
-export const CITATION_METHOD_VERSION = "v3";
+// v4 (17/11/2026): Claude counts only pages it cites (not every search result it saw), links match the domain's own
+// host only, the business name is read from the text with links removed, and answers are asked from a country.
+export const CITATION_METHOD_VERSION = "v4";
 
-export type CitationMethod = { version: string; samples: number; models: typeof CITATION_MODELS };
-export const citationMethod = (samples: number): CitationMethod => ({ version: CITATION_METHOD_VERSION, samples, models: { ...CITATION_MODELS } });
+/** DataForSEO location codes and their two-letter countries, for the user location of the answer engines. */
+export const LOCATION_COUNTRY: Record<number, string> = { 2036: "AU", 2840: "US", 2826: "GB", 2554: "NZ", 2124: "CA", 2372: "IE", 2356: "IN", 2702: "SG", 2710: "ZA" };
+
+/** Pure: the country answers are asked from: an explicit two-letter code, else the location code's country, else none. */
+export function citationCountry(opts: Pick<CitationOptions, "country" | "locationCode">): string | undefined {
+  const c = opts.country?.trim().toUpperCase();
+  if (c && /^[A-Z]{2}$/.test(c)) return c;
+  return opts.locationCode ? LOCATION_COUNTRY[opts.locationCode] : undefined;
+}
+
+/**
+ * Where each engine was asked from, so a report never implies local results it didn't get. "AU" = that country was
+ * sent; "location <code>" = the DataForSEO location; "not set" = the provider's default (US servers).
+ */
+export type CitationLocations = Record<"perplexity" | "chatgpt" | "claude" | "gemini" | "google_ai" | "google_ai_mode", string>;
+export function citationLocations(opts: Pick<CitationOptions, "country" | "locationCode">): CitationLocations {
+  const c = citationCountry(opts) ?? "not set";
+  const g = `location ${opts.locationCode ?? 2840}`;
+  return { perplexity: c, chatgpt: c, claude: c, gemini: "not set", google_ai: g, google_ai_mode: g };
+}
+
+export type CitationMethod = { version: string; samples: number; models: typeof CITATION_MODELS; locations?: CitationLocations };
+export const citationMethod = (samples: number, opts?: Pick<CitationOptions, "country" | "locationCode">): CitationMethod =>
+  ({ version: CITATION_METHOD_VERSION, samples, models: { ...CITATION_MODELS }, ...(opts ? { locations: citationLocations(opts) } : {}) });
 
 /**
  * Call limits and retries for the citation sampler (12/10/2026). The 11-12/10/2026 weekly readings were invalid
@@ -662,34 +697,58 @@ ${withText.map((a, i) => `${i + 1}. [${a.engine}] Query: "${a.query}"\nAnswer: $
 
 const escapeRx = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** Whole-word, case-insensitive match for a business name; null when the name is too short to match safely. A single word ("Pemba") matches on its own. */
+/**
+ * Whole-word, case-insensitive match for a business name; null when the name is too short to match safely. A single
+ * word ("Pemba") matches on its own. Words may be joined by up to 3 spaces or punctuation marks, or none, so
+ * "**Acme Clinic**", "Acme-Clinic" and "AcmeClinic" all match "Acme Clinic", and "&" matches "and" (17/11/2026: an
+ * answer listing "**Acme Clinic** — 12 Acme Road" was counted as not naming the business at all). A different word
+ * after the first one ("Acme Road") never matches "Acme Clinic".
+ */
 export function brandRegex(brandName?: string): RegExp | null {
   const name = brandName?.trim();
   if (!name || name.length < 3) return null;
-  return new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRx(name)}($|[^\\p{L}\\p{N}])`, "iu");
+  const words = name.split(/[^\p{L}\p{N}&]+/u).filter(Boolean);
+  if (!words.length) return null;
+  const body = words.map((w) => (w === "&" ? "(?:&|and)" : escapeRx(w))).join("[^\\p{L}\\p{N}]{0,3}");
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${body}($|[^\\p{L}\\p{N}])`, "iu");
+}
+
+/** The answer text without web addresses, so a name inside a link (a maps URL, "/acme-clinic/") isn't read as the name written in the answer. */
+export const withoutUrls = (text: string): string => text.replace(/https?:\/\/[^\s)\]>"']+/gi, " ");
+
+/** True when a source URL (or bare host) is the domain or one of its subdomains. A substring elsewhere in the URL never counts. */
+export function isOwnSource(source: string, domain: string): boolean {
+  const d = domain.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
+  let host = "";
+  try { host = new URL(/^https?:\/\//i.test(source) ? source : `https://${source}`).hostname.toLowerCase(); } catch { return false; }
+  host = host.replace(/^www\./, "");
+  return host === d || host.endsWith(`.${d}`);
 }
 
 /**
- * linked = the domain is in the answer's sources or in a URL inside the answer text.
- * named = not linked, but the answer names the business (brand_name) or writes the domain as plain text ("pemba.ai").
- * Both count as cited.
+ * linked = the domain is one of the answer's sources or a URL inside the answer text.
+ * inText = the answer text (web addresses removed) names the business (brand_name) or writes the domain as plain text
+ * ("pemba.ai"), whether or not it also links it.
+ * named = inText and not linked (kept for older callers). cited = linked or inText.
  */
-export function extractCitationResult(domain: string, answer: string, citations: string[], brand: RegExp | null = null): { cited: boolean; named: boolean; competitors: string[]; competitorUrls: string[]; sources: string[] } {
+export function extractCitationResult(domain: string, answer: string, citations: string[], brand: RegExp | null = null): { cited: boolean; named: boolean; linked: boolean; inText: boolean; competitors: string[]; competitorUrls: string[]; sources: string[] } {
   const domainClean = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
-  const rx = new RegExp(domainClean.replace(".", "\\."), "i");
+  const own = (c: string) => isOwnSource(c, domainClean);
   const d = escapeRx(domainClean);
   const urlRx = new RegExp(`https?://([a-z0-9-]+\\.)*${d}(?![\\p{L}\\p{N}-])`, "iu");
   const textRx = new RegExp(`(?<![\\p{L}\\p{N}.-])(www\\.)?${d}(?![\\p{L}\\p{N}-]|\\.[\\p{L}\\p{N}])`, "iu");
-  const linked = urlRx.test(answer) || citations.some((c) => rx.test(c));
-  const named = !linked && ((!!brand && brand.test(answer)) || textRx.test(answer));
-  const cited = linked || named;
-  const competitorUrls = citations.filter((c) => !rx.test(c) && /^https?:\/\//.test(c)).filter((v, i, a) => a.indexOf(v) === i).slice(0, 6);
+  const linked = urlRx.test(answer) || citations.some(own);
+  const plain = withoutUrls(answer);
+  const inText = (!!brand && brand.test(plain)) || textRx.test(plain);
+  const named = !linked && inText;
+  const cited = linked || inText;
+  const competitorUrls = citations.filter((c) => !own(c) && /^https?:\/\//.test(c)).filter((v, i, a) => a.indexOf(v) === i).slice(0, 6);
   const competitors = citations
-    .filter((c) => !rx.test(c))
+    .filter((c) => !own(c))
     .map((c) => { try { return new URL(c).hostname; } catch { return c; } })
     .filter((v, i, a) => a.indexOf(v) === i)
     .slice(0, 4);
-  return { cited, named, competitors, competitorUrls, sources: linked ? citations.filter((c) => rx.test(c)) : [] };
+  return { cited, named, linked, inText, competitors, competitorUrls, sources: linked ? citations.filter(own) : [] };
 }
 
 type LlmRun = { answer: string; citations: string[] };
@@ -727,6 +786,9 @@ async function sampleLlm(domain: string, query: string, n: number, run: () => Pr
     competitorUrls: [...new Set(rows.flatMap((r) => r.competitorUrls))].slice(0, 6),
     sources: [...new Set(rows.flatMap((r) => r.sources))],
     namedSamples: rows.filter((r) => r.named).length,
+    linkedSamples: rows.filter((r) => r.linked).length,
+    inTextSamples: rows.filter((r) => r.inText).length,
+    sampleFlags: rows.map((r) => ({ linked: r.linked, inText: r.inText })),
     answer: runs[0].answer,
     answers: runs.map((r) => r.answer),
   };
@@ -735,9 +797,9 @@ async function sampleLlm(domain: string, query: string, n: number, run: () => Pr
 
 /** One row per fetched SERP. shown=false (no AI answer on the page) is a real sample that counts as not cited. */
 function serpRow(domain: string, query: string, g: GoogleAnswer, brand: RegExp | null = null): LlmRow {
-  if (!g.shown) return { query, cited: false, citedSamples: 0, samples: 1, competitors: [], competitorUrls: [], sources: [], namedSamples: 0, shown: false, answer: "", answers: [] };
-  const { named, ...r } = extractCitationResult(domain, g.text, g.sources, brand);
-  return { ...r, query, citedSamples: r.cited ? 1 : 0, samples: 1, namedSamples: named ? 1 : 0, shown: true, answer: g.text, answers: [g.text] };
+  if (!g.shown) return { query, cited: false, citedSamples: 0, samples: 1, competitors: [], competitorUrls: [], sources: [], namedSamples: 0, linkedSamples: 0, inTextSamples: 0, sampleFlags: [], shown: false, answer: "", answers: [] };
+  const { named, linked, inText, ...r } = extractCitationResult(domain, g.text, g.sources, brand);
+  return { ...r, query, citedSamples: r.cited ? 1 : 0, samples: 1, namedSamples: named ? 1 : 0, linkedSamples: linked ? 1 : 0, inTextSamples: inText ? 1 : 0, sampleFlags: [{ linked, inText }], shown: true, answer: g.text, answers: [g.text] };
 }
 
 type EngineKey = "pplx" | "gpt" | "gemini" | "claude" | "aio" | "aimode";
@@ -763,6 +825,7 @@ type Collected = Record<EngineKey, LlmRow[]> & {
 async function collectCitations(domain: string, queries: string[], samples: number, opts: CitationOptions = {}): Promise<Collected> {
   const brand = brandRegex(opts.brandName);
   const loc = opts.locationCode;
+  const country = citationCountry(opts);
   const hasDFS = !!(process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD);
   const ordered = queries.slice(0, MAX_CITATION_QUESTIONS);
   // Engines the caller asked for (default all). An engine that is not wanted is not attempted, not charged and
@@ -799,10 +862,10 @@ async function collectCitations(domain: string, queries: string[], samples: numb
 
   await Promise.all(ordered.map(async (q) => {
     const [pplx, gpt, gemini, claude, aio, aimode] = await Promise.allSettled([
-      pplxKey ? (attempted.pplx++, sampleLlm(domain, q, samples, llmCall(limit.pplx, CALL_TIMEOUT_MS.pplx, (t) => queryPplxRaw(q, pplxKey, t)), brand)) : Promise.resolve(null),
-      openaiKey ? (attempted.gpt++, sampleLlm(domain, q, samples, llmCall(limit.gpt, CALL_TIMEOUT_MS.gpt, (t) => queryGPTRaw(q, openaiKey, t)), brand)) : Promise.resolve(null),
+      pplxKey ? (attempted.pplx++, sampleLlm(domain, q, samples, llmCall(limit.pplx, CALL_TIMEOUT_MS.pplx, (t) => queryPplxRaw(q, pplxKey, t, country)), brand)) : Promise.resolve(null),
+      openaiKey ? (attempted.gpt++, sampleLlm(domain, q, samples, llmCall(limit.gpt, CALL_TIMEOUT_MS.gpt, (t) => queryGPTRaw(q, openaiKey, t, country)), brand)) : Promise.resolve(null),
       geminiKey ? (attempted.gemini++, sampleLlm(domain, q, samples, llmCall(limit.gemini, CALL_TIMEOUT_MS.gemini, (t) => queryGeminiRaw(q, geminiKey, t)), brand)) : Promise.resolve(null),
-      claudeKey ? (attempted.claude++, sampleLlm(domain, q, samples, llmCall(limit.claude, CALL_TIMEOUT_MS.claude, (t) => queryClaudeRaw(q, t)), brand)) : Promise.resolve(null),
+      claudeKey ? (attempted.claude++, sampleLlm(domain, q, samples, llmCall(limit.claude, CALL_TIMEOUT_MS.claude, (t) => queryClaudeRaw(q, t, country)), brand)) : Promise.resolve(null),
       hasDFS && want("aio") ? (attempted.aio++, serpCall((t) => queryGoogleAIOverview(q, loc, t))) : Promise.resolve(null),
       hasDFS && want("aimode") ? (attempted.aimode++, serpCall((t) => queryGoogleAIMode(q, loc, t))) : Promise.resolve(null),
     ]);
@@ -889,17 +952,17 @@ function engineStats(rows: CitRow[]): EngineStats {
   return { cited: rows.filter((r) => r.cited).length, total: rows.length, citedSamples, samples, rate: samples ? Math.round((citedSamples / samples) * 100) : 0 };
 }
 
-const stripAnswer = ({ query, cited, citedSamples, samples, competitors, competitorUrls, sources, stance, namedSamples, shown }: CitRow): CitRow =>
-  ({ query, cited, citedSamples, samples, competitors, competitorUrls, sources, stance: cited ? (stance ?? null) : undefined, namedSamples, shown });
+const stripAnswer = ({ query, cited, citedSamples, samples, competitors, competitorUrls, sources, stance, namedSamples, linkedSamples, inTextSamples, shown }: CitRow): CitRow =>
+  ({ query, cited, citedSamples, samples, competitors, competitorUrls, sources, stance: cited ? (stance ?? null) : undefined, namedSamples, linkedSamples, inTextSamples, shown });
 
 /** stripAnswer, keeping every sampled answer's text when the caller asked for it. */
-const rowOut = (includeAnswers?: boolean) => (r: CitRow): CitRow => includeAnswers ? { ...stripAnswer(r), answers: r.answers ?? [] } : stripAnswer(r);
+const rowOut = (includeAnswers?: boolean) => (r: CitRow): CitRow => includeAnswers ? { ...stripAnswer(r), answers: r.answers ?? [], sampleFlags: r.sampleFlags ?? [] } : stripAnswer(r);
 
-async function queryPplxRaw(question: string, key: string, timeoutMs: number = CALL_TIMEOUT_MS.pplx): Promise<{ answer: string; citations: string[] }> {
+async function queryPplxRaw(question: string, key: string, timeoutMs: number = CALL_TIMEOUT_MS.pplx, country?: string): Promise<{ answer: string; citations: string[] }> {
   const res = await fetch("https://api.perplexity.ai/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: CITATION_MODELS.perplexity, messages: [{ role: "user", content: question }], max_tokens: 500 }),
+    body: JSON.stringify({ model: CITATION_MODELS.perplexity, messages: [{ role: "user", content: question }], max_tokens: 500, ...(country ? { web_search_options: { user_location: { country } } } : {}) }),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw httpError(res.status, res.headers.get("retry-after"));
@@ -911,12 +974,12 @@ async function queryPplxRaw(question: string, key: string, timeoutMs: number = C
 }
 
 /** ChatGPT via the Responses API with the web search tool (gpt-4o-mini-search-preview was deprecated by 19/09/2026). */
-async function queryGPTRaw(question: string, key: string, timeoutMs: number = CALL_TIMEOUT_MS.gpt): Promise<{ answer: string; citations: string[] }> {
+async function queryGPTRaw(question: string, key: string, timeoutMs: number = CALL_TIMEOUT_MS.gpt, country?: string): Promise<{ answer: string; citations: string[] }> {
   const model = CITATION_MODELS.chatgpt;
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, tools: [{ type: "web_search" }], input: question, max_output_tokens: 700 }),
+    body: JSON.stringify({ model, tools: [{ type: "web_search", ...(country ? { user_location: { type: "approximate", country } } : {}) }], input: question, max_output_tokens: 700 }),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw httpError(res.status, res.headers.get("retry-after"));
@@ -1037,22 +1100,23 @@ async function queryGeminiRaw(question: string, key: string, timeoutMs: number =
   return { answer, citations };
 }
 
-/** Claude with the web search tool. Sources come from the search result blocks and the text citations. */
-async function queryClaudeRaw(question: string, timeoutMs: number = CALL_TIMEOUT_MS.claude): Promise<{ answer: string; citations: string[] }> {
+/**
+ * Claude with the web search tool. Sources are the pages its answer text cites (v4, 17/11/2026). Every search result
+ * it was shown used to count too, so a site in the results but never used in the answer read as "cited" (one real
+ * check: 3 of 3 answers "cited" a site that 1 of the 3 answer texts mentioned).
+ */
+async function queryClaudeRaw(question: string, timeoutMs: number = CALL_TIMEOUT_MS.claude, country?: string): Promise<{ answer: string; citations: string[] }> {
   const res = await anthropic.messages.create({
     model: CITATION_MODELS.claude,
     max_tokens: 700,
-    tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 } as any],
+    tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2, ...(country ? { user_location: { type: "approximate", country } } : {}) } as any],
     messages: [{ role: "user", content: question }],
   }, { timeout: timeoutMs, maxRetries: 0 }); // retries happen in callWithRetry, inside the run time budget
   addCost("anthropic", anthropicCost(CITATION_MODELS.claude, res.usage as any));
   const blocks: any[] = res.content as any[];
   const answer = blocks.filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
   const citations: string[] = [];
-  for (const b of blocks) {
-    if (b.type === "web_search_tool_result" && Array.isArray(b.content)) for (const r of b.content) if (r?.url) citations.push(r.url);
-    if (b.type === "text" && Array.isArray(b.citations)) for (const c of b.citations) if (c?.url) citations.push(c.url);
-  }
+  for (const b of blocks) if (b.type === "text" && Array.isArray(b.citations)) for (const c of b.citations) if (c?.url) citations.push(c.url);
   return { answer, citations: [...new Set(citations)] };
 }
 
@@ -1242,6 +1306,6 @@ export async function checkCitationsRaw(domain: string, queries: string[], sampl
     sentiment,
     valid,
     invalidReasons,
-    method: citationMethod(samples),
+    method: citationMethod(samples, opts),
   };
 }
