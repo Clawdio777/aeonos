@@ -51,7 +51,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (payment === null) return;
 
   try {
-    const directive = `Perform a comprehensive AEO/GEO audit. Cover all four layers: on-page content optimisation, technical SEO, authority signals, and AI-specific optimisations (schema, llms.txt, E-E-A-T, AI inclusion check). Deliver a scored report and a prioritised P1/P2/P3 action plan.\n\nQuery: ${query}`;
+    const directive = `Perform a comprehensive AEO/GEO audit. Cover all four layers: on-page content optimisation, technical SEO, authority signals, and AI-specific optimisations (schema, llms.txt, E-E-A-T, AI inclusion check). Deliver a report and a prioritised P1/P2/P3 action plan. Give only scores the tools returned this run; anything no tool measured is "not measured", anything not fetched is "not checked".\n\nQuery: ${query}`;
     const result = await runAgent({ query: directive, caller_id });
 
     // Charge only now that the result is ready (see _x402-gate.ts "Charge only after the work succeeds").

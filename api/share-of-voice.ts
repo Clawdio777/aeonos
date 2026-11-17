@@ -10,6 +10,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { withPlaceholderNotice, buildPaymentReqs, buildBazaarExtension, send402, verifyPayment, settlePayment, sendNotCharged } from "./_x402-gate.js";
 import { checkCitationsRaw, isSharedCallerId, type CitationSnapshot } from "../src/tools.js";
+import { queryLine, checkedLines } from "./_sov-lines.js";
 
 const PRICE_USDC    = 1.50;
 const BASE_URL      = () => process.env.AGENT_BASE_URL || "https://aeonos.basechainlabs.com";
@@ -101,21 +102,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Build per-query breakdown: for each query, which brands were cited by which engines
     const queryBreakdown = queries.slice(0, 6).map((query) => {
       const lines = snapshots.map((snap) => {
-        const pplxCited = snap.perplexity.results.find((r) => r.query === query)?.cited;
-        const gptCited = snap.chatgpt.results.find((r) => r.query === query)?.cited;
-        const aioCited = snap.googleAIO.results.find((r) => r.query === query)?.cited;
-        const geminiCited = snap.gemini.results.find((r) => r.query === query)?.cited;
-        const claudeCited = snap.claude.results.find((r) => r.query === query)?.cited;
-        const aiModeCited = snap.googleAIMode.results.find((r) => r.query === query)?.cited;
-        const engines = [
-          gptCited ? "ChatGPT" : null,
-          geminiCited ? "Gemini" : null,
-          aioCited ? "Google AIO" : null,
-          aiModeCited ? "Google AI Mode" : null,
-          pplxCited ? "Perplexity" : null,
-          claudeCited ? "Claude" : null,
-        ].filter(Boolean);
-        return `  - ${snap.domain}: ${engines.length ? `cited by ${engines.join(", ")}` : "not cited"}`;
+        return `  - ${queryLine(snap, query)}`;
       });
       return `**"${query}"**\n${lines.join("\n")}`;
     }).join("\n\n");
@@ -145,6 +132,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const report = [
       `## AI Share of Voice — ${brands.join(" vs ")}`,
       `Queries: ${queries.length} | Engines: ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity, Claude`,
+      ...checkedLines(snapshots),
       "",
       "### Overall Combined Share",
       "| Brand | Citations | Share of Voice |",

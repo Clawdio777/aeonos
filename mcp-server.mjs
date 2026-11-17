@@ -108,7 +108,7 @@ const TOOLS = [
   },
   {
     name:        "aeonos_progress",
-    description: "Score a website across the AEO Four Layers framework: SXO, AIO, GEO, AEO. Returns per-layer scores (0–100), what's working, what's not, and the next 3 highest-impact actions. Uses persistent memory if available. 1.50 USDC per call.",
+    description: "Score a website across the AEO Four Layers framework: SXO, AIO, GEO, AEO. Returns per-layer scores (0–100) where measured (not measured otherwise), what's working, what's not, and the next 3 actions. Uses persistent memory if available. 1.50 USDC per call.",
     inputSchema: {
       type:       "object",
       properties: {

@@ -32,6 +32,9 @@ const state = {
   maxInFlight: { pplx: 0, gpt: 0, gemini: 0, claude: 0, aio: 0, aimode: 0 } as Record<Engine, number>,
   models: { pplx: [] as string[], gpt: [] as string[], gemini: [] as string[], claude: [] as string[] },
   answerText: "Some options include Acme and Other Co.",
+  /** Search results the fake Claude was shown but did not cite, and the request bodies/params each engine got. */
+  claudeSearchUrls: [] as string[],
+  requests: { pplx: [] as any[], gpt: [] as any[], claude: [] as any[] },
 };
 
 function reset() {
@@ -45,6 +48,8 @@ function reset() {
   state.maxInFlight = { pplx: 0, gpt: 0, gemini: 0, claude: 0, aio: 0, aimode: 0 };
   state.models = { pplx: [], gpt: [], gemini: [], claude: [] };
   state.answerText = "Some options include Acme and Other Co.";
+  state.claudeSearchUrls = [];
+  state.requests = { pplx: [], gpt: [], claude: [] };
   Object.assign(process.env, FAKE_ENV);
   // Sections 1-5 test how failures that survive every retry are counted, so they run with one attempt.
   // Section 6 turns retries back on.
@@ -83,6 +88,7 @@ const mockFetch = async (input: string | URL | Request, init?: RequestInit): Pro
 
   if (url === "https://api.perplexity.ai/chat/completions") {
     state.models.pplx.push(body.model);
+    state.requests.pplx.push(body);
     return inFlight("pplx", () => {
       const f = nextFailure("pplx");
       if (f) return failResponse(f, { choices: [{ message: { content: "" } }], citations: [] });
@@ -91,6 +97,7 @@ const mockFetch = async (input: string | URL | Request, init?: RequestInit): Pro
   }
   if (url === "https://api.openai.com/v1/responses") {
     state.models.gpt.push(body.model);
+    state.requests.gpt.push(body);
     const f = nextFailure("gpt");
     if (f) return failResponse(f, { output: [] });
     return json({ output: [{ type: "message", content: [{ type: "output_text", text: state.answerText, annotations: [{ type: "url_citation", url: "https://acme.com/a" }] }] }], usage: {} });
@@ -125,12 +132,14 @@ mock.module("@anthropic-ai/sdk", () => {
       create: async (params: { model: string; tools?: unknown[] }) => {
         if (!params.tools) return { content: [{ type: "text", text: "[]" }], usage: {} };
         state.models.claude.push(params.model);
+        state.requests.claude.push(params);
         const f = nextFailure("claude");
         if (f === "429") throw Object.assign(new Error("429 rate_limit_error"), { status: 429 });
         if (f === "500") throw Object.assign(new Error("500 api_error"), { status: 500 });
         if (f === "timeout") throw Object.assign(new Error("Request timed out."), { name: "APIConnectionTimeoutError" });
         if (f === "empty") return { content: [], usage: {} };
-        return { content: [{ type: "text", text: state.answerText, citations: [{ url: "https://acme.com/c" }] }], usage: {} };
+        const search = state.claudeSearchUrls.length ? [{ type: "web_search_tool_result", content: state.claudeSearchUrls.map((url) => ({ url })) }] : [];
+        return { content: [...search, { type: "text", text: state.answerText, citations: [{ url: "https://acme.com/c" }] }], usage: {} };
       },
     };
   }
@@ -264,7 +273,7 @@ describe("4. Pinned models and the method block", () => {
     expect(new Set(state.models.gemini)).toEqual(new Set(["gemini-3.8-flash"]));
     expect(new Set(state.models.pplx)).toEqual(new Set(["sonar"]));
     expect(new Set(state.models.claude)).toEqual(new Set(["claude-haiku-4-5-20251001"]));
-    expect(r.method).toEqual({ version: "v3", samples: 2, models: tools.CITATION_MODELS });
+    expect(r.method).toEqual({ version: "v4", samples: 2, models: tools.CITATION_MODELS, locations: { perplexity: "not set", chatgpt: "not set", claude: "not set", gemini: "not set", google_ai: "location 2840", google_ai_mode: "location 2840" } });
   });
 
   test("env overrides no longer change the model", async () => {
@@ -313,6 +322,88 @@ describe("5. Brand match", () => {
   });
 });
 
+describe("7. Named in text vs linked, and where answers are asked from (v4, 17/11/2026)", () => {
+  const brand = () => tools.brandRegex("Acme Clinic");
+  const ex = (answer: string, citations: string[] = []) => tools.extractCitationResult("acmeclinic.example.au", answer, citations, brand());
+
+  test("a bolded name in a list counts as named in text, even with no link", () => {
+    expect(ex("- **Acme Clinic** — 107 Acme Road, Springfield; massage by appointment.[5]")).toMatchObject({ cited: true, inText: true, linked: false, named: true });
+  });
+
+  test("punctuation or no space between the words still matches; another word after the first doesn't", () => {
+    expect(ex("Acme-Clinic is one option.")).toMatchObject({ inText: true });
+    expect(ex("AcmeClinic is one option.")).toMatchObject({ inText: true });
+    expect(ex("Acme Clinic Osteopathy, Springfield")).toMatchObject({ inText: true });
+    expect(ex("Located at 107 Acme Road, near the station.")).toMatchObject({ cited: false, inText: false });
+    expect(ex("Acme Clinical Supplies sells equipment.")).toMatchObject({ inText: false });
+    expect(tools.brandRegex("Smith & Co")?.test("Smith and Co is listed")).toBe(true);
+  });
+
+  test("a name inside a web address is not the name written in the answer", () => {
+    expect(ex("Directions: https://www.google.com/maps/dir//Acme+Clinic,+107+Acme+Rd")).toMatchObject({ inText: false, linked: false, cited: false });
+  });
+
+  test("a source chip labelled with the web address is a link, not the name written in the answer", () => {
+    // ChatGPT's inline source chip
+    expect(ex("Options include a few clinics. ([acmeclinic.example.au](https://acmeclinic.example.au/?utm_source=openai))")).toMatchObject({ linked: true, inText: false, named: false, cited: true });
+    // A chip for someone else's site neither links nor names the business
+    expect(ex("Try a directory. ([www.directory.example](https://www.directory.example/acmeclinic.example.au))")).toMatchObject({ linked: false, inText: false, cited: false });
+    // A link labelled with the name keeps its label: that is the name said in the text
+    expect(ex("See [Acme Clinic](https://directory.example/acme)")).toMatchObject({ inText: true, linked: false });
+  });
+
+  test("the name written all in lower case inside ordinary prose is not the name; other casings still count", () => {
+    expect(ex("Look for an acme clinic near you that offers massage.")).toMatchObject({ inText: false, cited: false });
+    expect(ex("ACME CLINIC is one option.")).toMatchObject({ inText: true });
+    expect(ex("Acme clinic is one option.")).toMatchObject({ inText: true });
+    expect(ex("acmeclinic on Instagram.")).toMatchObject({ inText: true });
+    // A name given all in lower case keeps matching lower case
+    expect(tools.extractCitationResult("x.example", "try acme clinic", [], tools.brandRegex("acme clinic"))).toMatchObject({ inText: true });
+  });
+
+  test("a legal suffix in the business name is not required in the answer", () => {
+    expect(tools.extractCitationResult("x.example", "**Acme Clinic** is listed.", [], tools.brandRegex("Acme Clinic Pty Ltd"))).toMatchObject({ inText: true });
+  });
+
+  test("a link to the domain is linked; linked and named in text are recorded separately", () => {
+    expect(ex("A list of clinics.", ["https://acmeclinic.example.au/services"])).toMatchObject({ cited: true, linked: true, inText: false, named: false });
+    expect(ex("Acme Clinic is good.", ["https://www.acmeclinic.example.au/"])).toMatchObject({ cited: true, linked: true, inText: true, named: false });
+  });
+
+  test("only the domain's own host is a link, never a substring elsewhere in the URL", () => {
+    expect(tools.isOwnSource("https://sub.acmeclinic.example.au/x", "acmeclinic.example.au")).toBe(true);
+    expect(tools.isOwnSource("https://notacmeclinic.example.au/", "acmeclinic.example.au")).toBe(false);
+    expect(tools.isOwnSource("https://directory.example/?ref=acmeclinic.example.au", "acmeclinic.example.au")).toBe(false);
+  });
+
+  test("Claude: a search result it was shown but did not cite is not a link", async () => {
+    state.claudeSearchUrls = ["https://pemba.ai/"];
+    state.answerText = "Some options include Acme and Other Co.";
+    const r = await tools.checkCitationsRaw("pemba.ai", ["q1"], 3, { brandName: "Pemba", engines: ["claude"] });
+    expect(r.claude.results[0]).toMatchObject({ cited: false, citedSamples: 0, linkedSamples: 0, inTextSamples: 0 });
+  });
+
+  test("per-sample flags and counts come back with the answers", async () => {
+    state.answerText = "Pemba is one option.";
+    const r = await tools.checkCitationsRaw("pemba.ai", ["q1"], 2, { brandName: "Pemba", includeAnswers: true, engines: ["gpt"] });
+    expect(r.chatgpt.results[0]).toMatchObject({ citedSamples: 2, inTextSamples: 2, linkedSamples: 0, namedSamples: 2, sampleFlags: [{ linked: false, inText: true }, { linked: false, inText: true }] });
+  });
+
+  test("the location code's country is sent to Perplexity, ChatGPT and Claude, and the method block says so", async () => {
+    const r = await tools.checkCitationsRaw("pemba.ai", ["q1"], 1, { locationCode: 2036 });
+    expect(state.requests.pplx[0].web_search_options).toEqual({ user_location: { country: "AU" } });
+    expect(state.requests.gpt[0].tools[0]).toEqual({ type: "web_search", user_location: { type: "approximate", country: "AU" } });
+    expect(state.requests.claude[0].tools[0]).toMatchObject({ user_location: { type: "approximate", country: "AU" } });
+    expect(r.method?.locations).toEqual({ perplexity: "AU", chatgpt: "AU", claude: "AU", gemini: "not set", google_ai: "location 2036", google_ai_mode: "location 2036" });
+  });
+
+  test("no location given: nothing is sent and the method block says not set", async () => {
+    await tools.checkCitationsRaw("pemba.ai", ["q1"], 1);
+    expect(state.requests.pplx[0].web_search_options).toBeUndefined();
+    expect(state.requests.gpt[0].tools[0]).toEqual({ type: "web_search" });
+  });
+});
+
 describe("/api/citations response", () => {
   function fakeRes() {
     const res: any = { statusCode: 0, body: undefined, headers: {} };
@@ -343,7 +434,7 @@ describe("/api/citations response", () => {
     expect(b.engines.chatgpt.aiAnswerShown).toBeUndefined();
     expect(b.valid).toBe(true); // 5 of 6 = 83%
     expect(b.invalidReasons).toEqual([]);
-    expect(b.method).toEqual({ version: "v3", samples: 3, models: tools.CITATION_MODELS });
+    expect(b.method).toEqual({ version: "v4", samples: 3, models: tools.CITATION_MODELS, locations: { perplexity: "not set", chatgpt: "not set", claude: "not set", gemini: "not set", google_ai: "location 2840", google_ai_mode: "location 2840" } });
     expect(b.engines_requested).toEqual(["chatgpt", "gemini", "google_ai", "google_ai_mode", "perplexity", "claude"]);
     if (process.env.PRINT_EXAMPLE) console.log(JSON.stringify({ ...b, engines: { claude: b.engines.claude, google_ai: b.engines.google_ai } }, null, 2));
   });
@@ -566,5 +657,28 @@ describe("6. Retries, per-provider limits and the run time budget (12/10/2026)",
       expect(chunks * Math.ceil(1000 / prodGap)).toBeLessThanOrEqual(2); // per second, 1 left for Sailor
       expect(chunks * (60_000 / prodGap)).toBeLessThanOrEqual(150);
     });
+  });
+});
+
+describe("8. The agent's citation tool: name, country, and when and where it was checked (17/11/2026)", () => {
+  test("brand_name and country reach the sampler, and the output says when, where from and which name was matched", async () => {
+    state.answerText = "**Acme Clinic** is one option.";
+    const out = await tools.executeTool("checkLiveCitations", { domain: "acmeclinic.example.au", queries: ["q1"], samples: 1, brand_name: "Acme Clinic", country: "au" });
+    expect(state.requests.pplx[0].web_search_options).toEqual({ user_location: { country: "AU" } });
+    expect(out).toMatch(/Checked: \d{4}-\d{2}-\d{2}T[\d:.]+Z \(answers fetched live this run\)\. Asked from: perplexity AU, chatgpt AU, claude AU, gemini not set/);
+    expect(out).toContain("Business name matched: Acme Clinic.");
+    expect(out).toContain("ChatGPT: 100% citation rate");
+  });
+
+  test("an engine that fails every call is NOT SAMPLED, never 0%", async () => {
+    state.fail = { pplx: { count: 99, kind: "500" } };
+    const out = await tools.executeTool("checkLiveCitations", { domain: "pemba.ai", queries: ["q1"], samples: 1 });
+    expect(out).toMatch(/Perplexity: NOT SAMPLED/);
+    expect(out).not.toMatch(/Perplexity: 0%/);
+  });
+
+  test("the citation snapshot carries when it was checked", async () => {
+    const r = await tools.checkCitationsRaw("pemba.ai", ["q1"], 1);
+    expect(r.checkedAt).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/);
   });
 });

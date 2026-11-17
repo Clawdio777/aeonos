@@ -45,7 +45,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (payment === null) return;
 
   try {
-    const directive = `Generate a complete, production-ready llms.txt file following the llms.txt standard. Structure it for AI crawler ingestion by ChatGPT, Perplexity, and Claude. Include: product summary, key pages with descriptions, FAQ section answering the most common user questions, entity definitions, and structured context that helps AI systems cite this business accurately.\n\nQuery: ${query}`;
+    const directive = `Generate a complete, production-ready llms.txt file following the llms.txt standard. Structure it for AI crawler ingestion by ChatGPT, Perplexity, and Claude. Include: product summary, key pages with descriptions, FAQ section, entity definitions, and structured context. Every fact (services, prices, pages, answers) must come from the fetched page; anything the page doesn't say is a marked placeholder such as "[answer from your site]", never a guess.\n\nQuery: ${query}`;
     const result = await runAgent({ query: directive, caller_id });
 
     // Charge only now that the result is ready (see _x402-gate.ts "Charge only after the work succeeds").

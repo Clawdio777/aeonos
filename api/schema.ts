@@ -45,7 +45,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (payment === null) return;
 
   try {
-    const directive = `Generate complete, production-ready JSON-LD Schema.org markup. Include all relevant schema types for the page. Output valid JSON-LD inside a code block, followed by a brief explanation of each schema type used and why.\n\nQuery: ${query}`;
+    const directive = `Generate complete, production-ready JSON-LD Schema.org markup. Include all relevant schema types for the page. Output valid JSON-LD inside a code block, followed by a brief explanation of each schema type used and why. Use only values found on the fetched page; mark every other value as a placeholder such as "[your phone number]", never a guess.\n\nQuery: ${query}`;
     const result = await runAgent({ query: directive, caller_id });
 
     // Charge only now that the result is ready (see _x402-gate.ts "Charge only after the work succeeds").
