@@ -343,6 +343,28 @@ describe("7. Named in text vs linked, and where answers are asked from (v4, 17/1
     expect(ex("Directions: https://www.google.com/maps/dir//Acme+Clinic,+107+Acme+Rd")).toMatchObject({ inText: false, linked: false, cited: false });
   });
 
+  test("a source chip labelled with the web address is a link, not the name written in the answer", () => {
+    // ChatGPT's inline source chip
+    expect(ex("Options include a few clinics. ([acmeclinic.example.au](https://acmeclinic.example.au/?utm_source=openai))")).toMatchObject({ linked: true, inText: false, named: false, cited: true });
+    // A chip for someone else's site neither links nor names the business
+    expect(ex("Try a directory. ([www.directory.example](https://www.directory.example/acmeclinic.example.au))")).toMatchObject({ linked: false, inText: false, cited: false });
+    // A link labelled with the name keeps its label: that is the name said in the text
+    expect(ex("See [Acme Clinic](https://directory.example/acme)")).toMatchObject({ inText: true, linked: false });
+  });
+
+  test("the name written all in lower case inside ordinary prose is not the name; other casings still count", () => {
+    expect(ex("Look for an acme clinic near you that offers massage.")).toMatchObject({ inText: false, cited: false });
+    expect(ex("ACME CLINIC is one option.")).toMatchObject({ inText: true });
+    expect(ex("Acme clinic is one option.")).toMatchObject({ inText: true });
+    expect(ex("acmeclinic on Instagram.")).toMatchObject({ inText: true });
+    // A name given all in lower case keeps matching lower case
+    expect(tools.extractCitationResult("x.example", "try acme clinic", [], tools.brandRegex("acme clinic"))).toMatchObject({ inText: true });
+  });
+
+  test("a legal suffix in the business name is not required in the answer", () => {
+    expect(tools.extractCitationResult("x.example", "**Acme Clinic** is listed.", [], tools.brandRegex("Acme Clinic Pty Ltd"))).toMatchObject({ inText: true });
+  });
+
   test("a link to the domain is linked; linked and named in text are recorded separately", () => {
     expect(ex("A list of clinics.", ["https://acmeclinic.example.au/services"])).toMatchObject({ cited: true, linked: true, inText: false, named: false });
     expect(ex("Acme Clinic is good.", ["https://www.acmeclinic.example.au/"])).toMatchObject({ cited: true, linked: true, inText: true, named: false });

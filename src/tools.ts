@@ -697,6 +697,11 @@ ${withText.map((a, i) => `${i + 1}. [${a.engine}] Query: "${a.query}"\nAnswer: $
 
 const escapeRx = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+const LEGAL_SUFFIX = /[\s,]+(?:pty\.?\s*ltd\.?|pty\.?|ltd\.?|limited|inc\.?|llc|l\.l\.c\.|co\.?|corp\.?|gmbh|plc)$/i;
+
+/** A business-name matcher. capitalised: the real name has capitals, so an all-lower-case multi-word match is prose. */
+export type BrandMatch = RegExp & { capitalised?: boolean };
+
 /**
  * Whole-word, case-insensitive match for a business name; null when the name is too short to match safely. A single
  * word ("Pemba") matches on its own. Words may be joined by up to 3 spaces or punctuation marks, or none, so
@@ -704,17 +709,41 @@ const escapeRx = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  * answer listing "**Acme Clinic** — 12 Acme Road" was counted as not naming the business at all). A different word
  * after the first one ("Acme Road") never matches "Acme Clinic".
  */
-export function brandRegex(brandName?: string): RegExp | null {
-  const name = brandName?.trim();
+export function brandRegex(brandName?: string): BrandMatch | null {
+  // A legal suffix ("Pty Ltd") is dropped: answers rarely write it (same rule as Pemba's cleanBusinessName).
+  const name = brandName?.replace(/&amp;/g, "&").trim().replace(LEGAL_SUFFIX, "").trim();
   if (!name || name.length < 3) return null;
   const words = name.split(/[^\p{L}\p{N}&]+/u).filter(Boolean);
   if (!words.length) return null;
   const body = words.map((w) => (w === "&" ? "(?:&|and)" : escapeRx(w))).join("[^\\p{L}\\p{N}]{0,3}");
-  return new RegExp(`(^|[^\\p{L}\\p{N}])${body}($|[^\\p{L}\\p{N}])`, "iu");
+  return Object.assign(new RegExp(`(^|[^\\p{L}\\p{N}])${body}($|[^\\p{L}\\p{N}])`, "iu"), { capitalised: name !== name.toLowerCase() });
 }
 
-/** The answer text without web addresses, so a name inside a link (a maps URL, "/acme-clinic/") isn't read as the name written in the answer. */
-export const withoutUrls = (text: string): string => text.replace(/https?:\/\/[^\s)\]>"']+/gi, " ");
+/**
+ * True when the text names the business. A match written all in lower case across two or more words is ordinary
+ * prose when the real name is capitalised: "western herbal medicine traditions" is not "Medicine Traditions", and
+ * "a remedial massage clinic" is not "Remedial Massage Clinic" (17/11/2026, same rule as Pemba's nameMentioned).
+ * "MEDICINE TRADITIONS", "Medicine traditions" and "medicinetraditions" still count.
+ */
+export function brandInText(brand: BrandMatch | null, text: string): boolean {
+  if (!brand) return false;
+  const g = new RegExp(brand.source, `${brand.flags.replace("g", "")}g`);
+  for (const m of text.matchAll(g)) {
+    const core = m[0].replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+    const prose = !!brand.capitalised && /[^\p{L}\p{N}]/u.test(core) && core === core.toLowerCase();
+    if (!prose) return true;
+  }
+  return false;
+}
+
+/**
+ * The answer text without web addresses, so a name inside a link (a maps URL, "/acme-clinic/") isn't read as the name
+ * written in the answer. A link whose label is only a web address (ChatGPT's "([site.com](https://site.com/))" source
+ * chip) goes too: that is a source (a link), not the name said in the answer. A link labelled with a name keeps its label.
+ */
+export const withoutUrls = (text: string): string => text
+  .replace(/\[\s*(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\]\s]*)?\s*\]\(\s*https?:\/\/[^)]*\)/gi, " ")
+  .replace(/https?:\/\/[^\s)\]>"']+/gi, " ");
 
 /** True when a source URL (or bare host) is the domain or one of its subdomains. A substring elsewhere in the URL never counts. */
 export function isOwnSource(source: string, domain: string): boolean {
@@ -731,7 +760,7 @@ export function isOwnSource(source: string, domain: string): boolean {
  * ("pemba.ai"), whether or not it also links it.
  * named = inText and not linked (kept for older callers). cited = linked or inText.
  */
-export function extractCitationResult(domain: string, answer: string, citations: string[], brand: RegExp | null = null): { cited: boolean; named: boolean; linked: boolean; inText: boolean; competitors: string[]; competitorUrls: string[]; sources: string[] } {
+export function extractCitationResult(domain: string, answer: string, citations: string[], brand: BrandMatch | null = null): { cited: boolean; named: boolean; linked: boolean; inText: boolean; competitors: string[]; competitorUrls: string[]; sources: string[] } {
   const domainClean = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
   const own = (c: string) => isOwnSource(c, domainClean);
   const d = escapeRx(domainClean);
@@ -739,7 +768,7 @@ export function extractCitationResult(domain: string, answer: string, citations:
   const textRx = new RegExp(`(?<![\\p{L}\\p{N}.-])(www\\.)?${d}(?![\\p{L}\\p{N}-]|\\.[\\p{L}\\p{N}])`, "iu");
   const linked = urlRx.test(answer) || citations.some(own);
   const plain = withoutUrls(answer);
-  const inText = (!!brand && brand.test(plain)) || textRx.test(plain);
+  const inText = brandInText(brand, plain) || textRx.test(plain);
   const named = !linked && inText;
   const cited = linked || inText;
   const competitorUrls = citations.filter((c) => !own(c) && /^https?:\/\//.test(c)).filter((v, i, a) => a.indexOf(v) === i).slice(0, 6);
@@ -766,7 +795,7 @@ export function failReason(e: unknown): string {
 type Sampled = { row: LlmRow | null; errors: string[] };
 
 /** Run n samples of one LLM engine for one query and fold them into a single row. Failed or empty calls are not samples; their reasons are returned in errors. */
-async function sampleLlm(domain: string, query: string, n: number, run: () => Promise<LlmRun>, brand: RegExp | null = null): Promise<Sampled> {
+async function sampleLlm(domain: string, query: string, n: number, run: () => Promise<LlmRun>, brand: BrandMatch | null = null): Promise<Sampled> {
   const errors: string[] = [];
   const runs: LlmRun[] = [];
   for (const r of await Promise.allSettled(Array.from({ length: n }, run))) {
@@ -796,7 +825,7 @@ async function sampleLlm(domain: string, query: string, n: number, run: () => Pr
 }
 
 /** One row per fetched SERP. shown=false (no AI answer on the page) is a real sample that counts as not cited. */
-function serpRow(domain: string, query: string, g: GoogleAnswer, brand: RegExp | null = null): LlmRow {
+function serpRow(domain: string, query: string, g: GoogleAnswer, brand: BrandMatch | null = null): LlmRow {
   if (!g.shown) return { query, cited: false, citedSamples: 0, samples: 1, competitors: [], competitorUrls: [], sources: [], namedSamples: 0, linkedSamples: 0, inTextSamples: 0, sampleFlags: [], shown: false, answer: "", answers: [] };
   const { named, linked, inText, ...r } = extractCitationResult(domain, g.text, g.sources, brand);
   return { ...r, query, citedSamples: r.cited ? 1 : 0, samples: 1, namedSamples: named ? 1 : 0, linkedSamples: linked ? 1 : 0, inTextSamples: inText ? 1 : 0, sampleFlags: [{ linked, inText }], shown: true, answer: g.text, answers: [g.text] };
