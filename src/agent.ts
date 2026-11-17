@@ -30,13 +30,24 @@ async function fetchSailorKnowledge(): Promise<string> {
   const now = Date.now()
   if (_knowledgeCache && _knowledgeCache.expires > now) return _knowledgeCache.data
 
+  // 17/11/2026: the feed used to fail silently (wrong token, any error -> ''). Now a failure logs one line with the
+  // status or error name only (never the token or the response body), and the answer runs with no notes at all:
+  // nothing is filled in in their place.
+  const token = (process.env.PEMBA_KNOWLEDGE_TOKEN || '').trim()
+  if (!token) {
+    console.warn('[aeonos] knowledge feed not loaded: PEMBA_KNOWLEDGE_TOKEN not set')
+    return ''
+  }
   try {
     const baseUrl = process.env.PEMBA_KNOWLEDGE_URL ?? 'https://pemba.ai'
     const res = await fetch(`${baseUrl}/api/aeonos/knowledge`, {
-      headers: { Authorization: `Bearer ${process.env.PEMBA_API_KEY}` },
+      headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(5000),
     })
-    if (!res.ok) return ''
+    if (res.status !== 200) {
+      console.warn(`[aeonos] knowledge feed not loaded: HTTP ${res.status}`)
+      return ''
+    }
     const json = (await res.json()) as { knowledge?: Array<{ category: string; title: string; insight: string; date: string }> }
     const entries = json.knowledge ?? []
     if (entries.length === 0) return ''
@@ -44,7 +55,8 @@ async function fetchSailorKnowledge(): Promise<string> {
     const data = formatKnowledge(entries, new Date(now))
     _knowledgeCache = { data, expires: now + 60 * 60 * 1000 }
     return data
-  } catch {
+  } catch (e) {
+    console.warn(`[aeonos] knowledge feed not loaded: ${e instanceof Error ? e.name : 'error'}`)
     return ''
   }
 }
