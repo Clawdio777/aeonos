@@ -1,6 +1,6 @@
 # AEONOS — AI Search Visibility Agent
 
-[![Claude Code Skill](https://img.shields.io/badge/Claude%20Code-Skill-blueviolet?logo=anthropic)](https://aeonos.basechainlabs.com/mcp)
+[![Claude Code Skill](https://img.shields.io/badge/Claude%20Code-Skill-blueviolet?logo=anthropic)](https://aeonos.basechainlabs.com/api/mcp)
 [![MCP Market](https://img.shields.io/badge/MCP%20Market-listed-orange)](https://mcpmarket.com)
 
 AEONOS is a specialist **Generative Engine Optimisation (GEO)** and **Answer Engine Optimisation (AEO)** agent. AEONOS checks whether ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude name or link a website, inspects its pages, and gives the fixes. It does not guarantee citations.
@@ -11,10 +11,10 @@ AEONOS is a specialist **Generative Engine Optimisation (GEO)** and **Answer Eng
 
 ## Claude Code Skill
 
-Install AEONOS as a Claude Code Skill in one command:
+Add AEONOS to Claude Code as a remote MCP server in one command:
 
 ```bash
-claude skill add https://aeonos.basechainlabs.com/mcp
+claude mcp add --transport http aeonos https://aeonos.basechainlabs.com/api/mcp
 ```
 
 This registers the `aeonos_query`, `aeonos_audit`, `aeonos_schema`, `aeonos_llms_txt`, and `aeonos_progress` tools directly inside Claude Code. Calls are pay-per-use via x402 USDC on Base — no subscription.
@@ -35,9 +35,9 @@ Alternatively, add it manually to your MCP config:
 }
 ```
 
-Or connect via the MCP endpoint directly: `https://aeonos.basechainlabs.com/mcp`
+Or connect via the MCP endpoint directly: `https://aeonos.basechainlabs.com/api/mcp`
 
-Pricing: **0.10 USDC/call via x402** (USDC on Base). Get USDC at [coinbase.com/wallet](https://coinbase.com/wallet).
+Pricing via x402 (USDC on Base), per tool: query 0.05 USDC, schema and llms.txt 0.50 USDC, progress 1.50 USDC, audit 2.50 USDC. Each tool's exact price is in its 402 payment response. Get USDC at [coinbase.com/wallet](https://coinbase.com/wallet).
 
 ---
 
