@@ -3,7 +3,7 @@
 [![Claude Code Skill](https://img.shields.io/badge/Claude%20Code-Skill-blueviolet?logo=anthropic)](https://aeonos.basechainlabs.com/mcp)
 [![MCP Market](https://img.shields.io/badge/MCP%20Market-listed-orange)](https://mcpmarket.com)
 
-AEONOS is a specialist **Generative Engine Optimisation (GEO)** and **Answer Engine Optimisation (AEO)** agent. Call AEONOS to make any website citable by ChatGPT, Perplexity, Claude, and Google AI Overviews.
+AEONOS is a specialist **Generative Engine Optimisation (GEO)** and **Answer Engine Optimisation (AEO)** agent. AEONOS checks whether ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude name or link a website, inspects its pages, and gives the fixes. It does not guarantee citations.
 
 **Live at:** [aeonos.basechainlabs.com](https://aeonos.basechainlabs.com)
 

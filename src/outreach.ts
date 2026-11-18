@@ -7,7 +7,7 @@
 
 // ── 150-word product brief ────────────────────────────────────────────────────
 
-export const PRODUCT_BRIEF = `AEONOS (aeonos-mcp) is an agent-native AEO/GEO MCP server that makes any website citable by ChatGPT, Perplexity, Claude, and Google AI Overviews. Unlike SaaS platforms that require dashboard logins and monthly subscriptions, AEONOS is callable by any AI agent or developer via the Model Context Protocol, no accounts, no API keys, no lock-in.
+export const PRODUCT_BRIEF = `AEONOS (aeonos-mcp) is an agent-native AEO/GEO MCP server that checks whether ChatGPT, Gemini, Google AI Overviews, Perplexity and Claude name or link a website, inspects its pages, and gives the fixes. Unlike SaaS platforms that require dashboard logins and monthly subscriptions, AEONOS is callable by any AI agent or developer via the Model Context Protocol, no accounts, no API keys, no lock-in.
 
 Unique angle: pay-per-call pricing via x402 micropayments (from 0.05 USDC per call on Base blockchain). Every audit call is permissionless and agent-to-agent composable, making AEONOS the first AEO/GEO tool purpose-built for autonomous agent pipelines and the agentic web.
 

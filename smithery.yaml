@@ -5,8 +5,8 @@ name: aeonos
 displayName: "AEONOS — AI Search Visibility Agent"
 description: |
   Generative Engine Optimisation (GEO) and Answer Engine Optimisation (AEO) agent.
-  Call AEONOS to make any website or content citable by ChatGPT, Perplexity, Claude,
-  and Google AI Overviews. Tools: quick query, full audit, JSON-LD schema generation,
+  AEONOS checks whether ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity
+  and Claude name or link a website, inspects its pages, and gives the fixes. Tools: quick query, full audit, JSON-LD schema generation,
   llms.txt creation, and Four Layers progress scoring.
 
   Persistent memory per caller_id — stores site context, prior audits, and keywords
