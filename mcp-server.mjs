@@ -3,14 +3,13 @@
  * AEONOS MCP Server
  *
  * Exposes AEONOS as an MCP tool set for Claude Desktop, Cursor, and other
- * MCP-compatible clients. Handles x402 payments transparently via a
- * pre-funded server wallet configured by the user.
+ * MCP-compatible clients. Two ways to pay:
  *
- * Setup:
- *   npm install
- *   AEONOS_PRIVATE_KEY=0x... node mcp-server.mjs
+ *   AEONOS_API_KEY=pg_... npx aeonos-mcp      card credits: tools/list and tools/call go to the hosted
+ *                                             endpoint (/api/mcp) with the key in X-Api-Key
+ *   AEONOS_PRIVATE_KEY=0x... npx aeonos-mcp   USDC on Base: x402 payments signed on this machine
  *
- * Or via Smithery — configure AEONOS_PRIVATE_KEY in the tool settings.
+ * If both are set, AEONOS_API_KEY (card credits) is used.
  */
 
 import { createWalletClient, createPublicClient, http } from "viem";
@@ -21,6 +20,20 @@ import { ExactEvmScheme, toClientEvmSigner } from "@x402/evm";
 
 const BASE_URL = "https://aeonos.basechainlabs.com";
 const PRIVATE_KEY = process.env.AEONOS_PRIVATE_KEY;
+const API_KEY     = process.env.AEONOS_API_KEY?.trim();
+
+// ── Card credits: forward to the hosted endpoint with the pg_ key ────────────
+
+async function forwardToHosted(req) {
+  const res  = await fetch(`${BASE_URL}/api/mcp`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", "X-Api-Key": API_KEY },
+    body:    JSON.stringify(req),
+  });
+  const data = await res.json().catch(() => null);
+  if (!data || (data.result === undefined && data.error === undefined)) throw new Error(`AEONOS error: HTTP ${res.status}`);
+  return { jsonrpc: "2.0", id: req.id, ...(data.error ? { error: data.error } : { result: data.result }) };
+}
 
 // ── x402 client setup ────────────────────────────────────────────────────────
 
@@ -43,7 +56,7 @@ const x402Fetch = buildX402Fetch();
 
 async function callAeonos(path, query, callerId) {
   if (!x402Fetch) {
-    return "⚠️ AEONOS_PRIVATE_KEY not configured. Add a Base wallet private key with USDC to use AEONOS tools.";
+    return "⚠️ No payment configured. Set AEONOS_API_KEY to your pg_ key (card credits from https://aeonos.basechainlabs.com/#get-access), or AEONOS_PRIVATE_KEY to a Base wallet private key with USDC.";
   }
   const res = await x402Fetch(`${BASE_URL}${path}`, {
     method:  "POST",
@@ -138,9 +151,17 @@ async function handleRequest(req) {
   if (method === "initialize") {
     return send({ jsonrpc: "2.0", id, result: {
       protocolVersion: "2024-11-05",
-      serverInfo:      { name: "aeonos", version: "1.1.0" },
+      serverInfo:      { name: "aeonos", version: "1.1.3" },
       capabilities:    { tools: {} },
     }});
+  }
+
+  if (API_KEY && (method === "tools/list" || method === "tools/call")) {
+    try {
+      return send(await forwardToHosted(req));
+    } catch (e) {
+      return send({ jsonrpc: "2.0", id, error: { code: -32000, message: e.message } });
+    }
   }
 
   if (method === "tools/list") {
