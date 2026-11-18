@@ -452,7 +452,7 @@ const _bazaarBase = declareDiscoveryExtension({
         description:
           "AEO/GEO question or your real URL to audit (replace YOUR-SITE.com). Examples: 'Audit https://yourdomain.com for AI visibility', " +
           "'Write an llms.txt for my SaaS', 'Generate JSON-LD schema for my pricing page', " +
-          "'Score my site on the AEONOS 5-pillar AI inclusion check'",
+          "'Check whether AI answers name or link my site today'",
       },
       caller_id: {
         type: "string",
@@ -469,7 +469,7 @@ const _bazaarBase = declareDiscoveryExtension({
       artifact: {
         parts: [{
           type: "text",
-          text: "# AEO Audit: mysite.com\n\n**Overall Score: 62/100**\n\n## P1 — Do This Week\n1. Add FAQPage JSON-LD schema...",
+          text: "# AEO Audit: mysite.com\n\n## Live citation check (this run)\n...\n\n## P1 — Do This Week\n1. Add FAQPage JSON-LD schema...",
         }],
         index: 0,
       },
@@ -523,7 +523,7 @@ function send402(
     error:       errorReason ?? "payment-required",
     resource: {
       url:         `${base}/api/agent`,
-      description: "SEO and marketing analytics agent for AI search visibility (AEO/GEO/SEO). Not a deterministic checker: each 0.05 USDC call runs live research and returns a written, prioritised plan for your site, with schema and llms.txt drafts, and remembers your site across calls. Get cited by ChatGPT, Perplexity, Claude and Google AI Overviews.",
+      description: "SEO and marketing analytics agent for AI search visibility (AEO/GEO/SEO). Not a deterministic checker: each 0.05 USDC call runs live research and returns a written, prioritised plan for your site, with schema and llms.txt drafts, and remembers your site across calls. Checks whether ChatGPT, Gemini, Perplexity, Claude and Google's AI answers name your business today, and what to fix.",
       mimeType:    "application/json",
     },
     accepts:    [paymentReqs],

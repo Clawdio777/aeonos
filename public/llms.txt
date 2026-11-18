@@ -1,10 +1,10 @@
 # AEONOS
 
-> AEONOS is the agent-callable execution layer for answer engine optimisation (AEO) and generative engine optimisation (GEO). It makes a website citable by ChatGPT, Perplexity, Claude, and Google AI Overviews.
+> AEONOS is an agent-callable service for answer engine optimisation (AEO) and generative engine optimisation (GEO). It checks whether ChatGPT, Gemini, Perplexity, Claude and Google's AI answers name your business today, and what to fix.
 
 Host: aeonos.basechainlabs.com
 
-Pemba is the managed AEO service for small and medium businesses. AEONOS is the agent-callable execution layer: agents call it to run audits, schema, llms.txt, and citation work.
+Pemba is the managed AEO service for small and medium businesses. AEONOS is the agent-callable layer: agents call it to run audits, live citation checks, schema and llms.txt work.
 
 ## Install
 
@@ -12,15 +12,25 @@ Pemba is the managed AEO service for small and medium businesses. AEONOS is the 
 npx aeonos-mcp
 ```
 
+Run the npm package locally to pay per call in USDC on Base. Your wallet key stays on your machine. The hosted MCP endpoint takes an API key from a card credit purchase instead. Never send a wallet private key to any hosted service.
+
 ## Capabilities
 
-- AEO strategy audit: AI readiness score with a P1/P2/P3 roadmap
-- JSON-LD schema: production-ready Schema.org markup
-- llms.txt: a deploy-ready file for AI crawlers
-- Progress report: Four Layers scorecard (SXO, AIO, GEO, AEO)
+- AEO audit: live AI answer check, page check (schema, E-E-A-T, llms.txt, AI crawler rules) and a P1/P2/P3 plan. Scores only where measured.
+- Live citation check: asks ChatGPT, Gemini, Perplexity, Claude, Google AI Overviews and Google AI Mode your buyers' questions, and reports separately whether each named your business and whether it linked to your site
+- JSON-LD schema: Schema.org markup that uses only details from your page; anything missing is a clearly marked placeholder
+- llms.txt: every fact comes from your site; gaps are marked placeholders
+- Progress report: Four Layers report (SXO, AIO, GEO, AEO), a score only where a tool measured it, plus your next 3 actions
 - AI share of voice: compare 2-5 brands across ChatGPT, Gemini, Google AI Overviews, Google AI Mode, Perplexity and Claude, with each brand's share of citations per engine
 - Agent query: citation tactics, quick wins, and keyword strategy
 - Persistent memory: site context kept across calls when a caller id is supplied
+
+## How results are reported
+
+- Anything not checked, or any engine that returned no data, says "not checked" with the reason. It is never guessed or shown as 0%.
+- By default, answers are asked as from the United States. If you name your buyers' country, ChatGPT, Perplexity and Claude are asked as someone there. Gemini has no country setting.
+- Health, legal and finance businesses get no advice their advertising rules forbid (testimonials, "best" claims, comparisons, guaranteed results).
+- AEONOS does not promise or predict that any AI engine will cite a site.
 
 ## Pricing
 
@@ -32,6 +42,7 @@ Pay per call in USDC on Base via x402, or with card credits. 1 credit = $0.01 US
 - aeonos_progress: 1.50 USDC, or 75 credits
 - aeonos_share_of_voice: 1.50 USDC
 - aeonos_audit: 2.50 USDC, or 100 credits
+- check_credits: 1 credit
 
 ## Pages
 
