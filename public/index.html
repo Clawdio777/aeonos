@@ -508,7 +508,7 @@
         if (key) {
           document.getElementById('modal-key').textContent = key;
           document.getElementById('modal-config').textContent = JSON.stringify({
-            mcpServers: { aeonos: { url: "https://paygate-aeonos-production.up.railway.app/mcp", headers: { "X-Api-Key": key } } }
+            mcpServers: { aeonos: { url: "https://aeonos.basechainlabs.com/api/mcp", headers: { "X-Api-Key": key } } }
           }, null, 2);
           var modal = document.getElementById('checkout-modal');
           modal.style.display = 'flex';

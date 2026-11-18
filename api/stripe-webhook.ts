@@ -1,12 +1,13 @@
 /**
  * POST /api/stripe-webhook
  * Receives Stripe checkout.session.completed events.
- * Adds credits to the pre-generated PayGated API key and emails it to the customer.
+ * Adds the pack's credits to the buyer's pg_ key (once per session, api/_credits.ts) and emails the key.
  */
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import Stripe from "stripe";
 import { Resend } from "resend";
+import { AGENT, topup } from "./_credits.js";
 
 export const config = { api: { bodyParser: false } };
 
@@ -24,15 +25,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const stripeKey      = process.env.STRIPE_SECRET_KEY!;
   const webhookSecret  = process.env.STRIPE_WEBHOOK_SECRET!;
-  const pgUrl          = process.env.PAYGATE_AEONOS_URL!;
-  const pgAdminKey     = process.env.PAYGATE_AEONOS_ADMIN_KEY!;
 
   const stripe = new Stripe(stripeKey, { apiVersion: "2025-02-24.acacia" });
   const rawBody = await getRawBody(req);
 
   let event: Stripe.Event;
   try {
-    event = stripe.webhooks.constructEvent(rawBody, req.headers["stripe-signature"] as string, webhookSecret);
+    event = await stripe.webhooks.constructEventAsync(rawBody, req.headers["stripe-signature"] as string, webhookSecret);
   } catch (e: any) {
     console.error("[stripe-webhook] signature verification failed:", e.message);
     return res.status(400).json({ error: "Invalid signature" });
@@ -46,23 +45,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const credits  = parseInt(meta.paygate_credits ?? "0", 10);
   const email    = session.customer_details?.email ?? "";
 
+  // One Stripe account carries several products' checkouts: only top up this agent's paid packs.
+  if (meta.agent !== AGENT || session.payment_status === "unpaid") return res.status(200).json({ received: true });
+
   if (!apiKey || !credits) {
     console.error("[stripe-webhook] missing metadata", meta);
     return res.status(200).json({ received: true });
   }
 
-  // Add credits to the PayGated key
+  // Add credits to the key. Stripe retries on a 500, and a repeat of the same session adds nothing.
+  let applied: boolean;
   try {
-    const pgRes = await fetch(`${pgUrl}/topup`, {
-      method:  "POST",
-      headers: { "X-Admin-Key": pgAdminKey, "Content-Type": "application/json" },
-      body:    JSON.stringify({ key: apiKey, credits }),
-    });
-    if (!pgRes.ok) throw new Error(`PayGate credits error: ${pgRes.status} — ${await pgRes.text()}`);
+    ({ applied } = await topup(apiKey, credits, session.id, `checkout-${meta.pack ?? "pack"}-${session.created}`));
   } catch (e: any) {
     console.error("[stripe-webhook] failed to add credits:", e.message);
     return res.status(500).json({ error: "Failed to add credits" });
   }
+  if (!applied) return res.status(200).json({ received: true, duplicate: true });
 
   // Email the API key to the customer
   if (email) {
@@ -90,10 +89,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 </pre>
-<p>Or use the PayGated MCP endpoint directly:<br>
-<code>https://paygate-aeonos-production.up.railway.app/mcp</code><br>
+<p>Or use the hosted MCP endpoint directly:<br>
+<code>https://aeonos.basechainlabs.com/api/mcp</code><br>
 Header: <code>X-Api-Key: ${apiKey}</code></p>
-<p style="color:#888;font-size:13px;">Credits are consumed per tool call. Check your balance at: <a href="${pgUrl}/keys/${apiKey}/balance">balance check</a></p>
+<p style="color:#888;font-size:13px;">Credits are consumed per tool call. Check your balance any time with the check_credits tool.</p>
         `.trim(),
       });
     } catch (e: any) {
@@ -102,6 +101,6 @@ Header: <code>X-Api-Key: ${apiKey}</code></p>
     }
   }
 
-  console.log(`[stripe-webhook] ✓ ${credits} credits added to ${apiKey} for ${email}`);
+  console.log(`[stripe-webhook] ✓ ${credits} credits added to ${apiKey.slice(0, 10)}… for ${email}`);
   return res.status(200).json({ received: true });
 }
