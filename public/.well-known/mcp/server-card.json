@@ -1,13 +1,13 @@
 {
   "name": "aeonos",
-  "version": "1.1.0",
+  "version": "1.1.3",
   "displayName": "AEONOS — AI Search Visibility Agent",
-  "description": "Generative Engine Optimisation (GEO) and Answer Engine Optimisation (AEO) agent. Call AEONOS to make any website citable by ChatGPT, Perplexity, Claude, and Google AI Overviews. Persistent memory per caller_id — no re-sending context on repeat calls.",
+  "description": "Generative Engine Optimisation (GEO) and Answer Engine Optimisation (AEO) agent. AEONOS checks whether ChatGPT, Gemini, Perplexity, Claude, Google AI Overviews and Google AI Mode name your business today, and what to fix. It also drafts JSON-LD schema and llms.txt from your own pages. Persistent memory per caller_id, so you don't re-send context on repeat calls.",
   "homepage": "https://aeonos.basechainlabs.com",
   "authentication": {
     "required": true,
     "schemes": ["header"],
-    "description": "Base wallet private key (0x...) with USDC on Base for x402 payments, passed as X-Wallet-Key header"
+    "description": "The hosted endpoint uses an AEONOS API key (starts with pg_) from a card credit purchase at https://aeonos.basechainlabs.com/#get-access, sent as the X-Api-Key header. Never send a wallet private key to any hosted service. To pay per call in USDC on Base, run the npm package locally (npx aeonos-mcp) so your wallet key never leaves your machine."
   },
   "tools": [
     {
@@ -16,29 +16,33 @@
     },
     {
       "name": "aeonos_audit",
-      "description": "Full AEO/GEO audit. Returns AI readiness score (0–100), four-layer analysis, and P1/P2/P3 action roadmap. 2.50 USDC per call."
+      "description": "Full AEO/GEO audit: a live check of whether AI answers name or link the site, a page check (schema, E-E-A-T, llms.txt, AI crawler rules) and a P1/P2/P3 plan. Scores only where measured. 2.50 USDC per call."
     },
     {
       "name": "aeonos_schema",
-      "description": "Generate production-ready JSON-LD Schema.org markup (FAQPage, Product, Service, LocalBusiness, HowTo). Returns valid JSON-LD ready for <head> injection. 0.50 USDC per call."
+      "description": "Generate JSON-LD Schema.org markup (FAQPage, Product, Service, LocalBusiness, HowTo). Uses only details from your page; anything missing is a clearly marked placeholder. 0.50 USDC per call."
     },
     {
       "name": "aeonos_llms_txt",
-      "description": "Generate a complete llms.txt file for any website. Structured for ChatGPT, Perplexity, and Claude crawlers. 0.50 USDC per call."
+      "description": "Generate an llms.txt file for any website, structured for ChatGPT, Perplexity, and Claude crawlers. Every fact comes from your site; gaps are marked placeholders. 0.50 USDC per call."
     },
     {
       "name": "aeonos_progress",
-      "description": "Score a website on the AEO Four Layers framework (SXO/AIO/GEO/AEO). Returns per-layer scores and next 3 actions. 1.50 USDC per call."
+      "description": "Four Layers report (SXO, AIO, GEO, AEO): a score only where a tool measured it, otherwise 'not measured', plus your next 3 actions. 1.50 USDC per call."
+    },
+    {
+      "name": "check_credits",
+      "description": "Check your remaining AEONOS credit balance. Costs 1 credit."
     }
   ],
   "prompts": [
     { "name": "aeo-quick-wins",   "description": "Get 3 immediate AEO/GEO quick wins for any website" },
     { "name": "full-audit",       "description": "Full AEO/GEO audit with P1/P2/P3 action roadmap" },
-    { "name": "generate-schema",  "description": "Generate production-ready JSON-LD Schema.org markup" },
-    { "name": "create-llms-txt",  "description": "Generate a complete llms.txt file for AI crawler ingestion" },
-    { "name": "progress-report",  "description": "Score a website across the AEO Four Layers framework" },
-    { "name": "optimise-content", "description": "Optimise content for AI engine citation before publishing" },
-    { "name": "citation-check",   "description": "Check if a URL will be cited by ChatGPT, Perplexity, Claude, Google AI Overviews" }
+    { "name": "generate-schema",  "description": "Generate JSON-LD Schema.org markup from the details on your page" },
+    { "name": "create-llms-txt",  "description": "Generate an llms.txt file for AI crawlers from the facts on your site" },
+    { "name": "progress-report",  "description": "Report on a website across the AEO Four Layers framework" },
+    { "name": "optimise-content", "description": "Make content clearer to AI answer engines before publishing" },
+    { "name": "citation-check",   "description": "Check whether AI answers name or link this site today" }
   ],
   "resources": []
 }

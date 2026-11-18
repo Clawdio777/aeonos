@@ -55,7 +55,7 @@ const TOOLS = [
   },
   {
     name:        "aeonos_audit",
-    description: "Full AEO/GEO audit. Returns AI readiness score (0–100), four-layer analysis, and P1/P2/P3 action roadmap. 2.50 USDC per call.",
+    description: "Full AEO/GEO audit: a live check of whether AI answers name or link the site, a page check (schema, E-E-A-T, llms.txt, AI crawler rules) and a P1/P2/P3 plan. Scores only where measured. 2.50 USDC per call.",
     annotations: TOOL_ANNOTATIONS,
     inputSchema: {
       type:       "object",
@@ -69,7 +69,7 @@ const TOOLS = [
   },
   {
     name:        "aeonos_schema",
-    description: "Generate production-ready JSON-LD Schema.org markup (FAQPage, Product, Service, LocalBusiness, HowTo). Returns valid JSON-LD ready for <head> injection. 0.50 USDC per call.",
+    description: "Generate JSON-LD Schema.org markup (FAQPage, Product, Service, LocalBusiness, HowTo) for the page <head>. Uses only details from your page; anything missing is a clearly marked placeholder. 0.50 USDC per call.",
     annotations: TOOL_ANNOTATIONS,
     inputSchema: {
       type:       "object",
@@ -83,7 +83,7 @@ const TOOLS = [
   },
   {
     name:        "aeonos_llms_txt",
-    description: "Generate a complete llms.txt file for any website. Structured for ChatGPT (GPTBot), Perplexity (PerplexityBot), and Claude (ClaudeBot). Deploy output at /llms.txt. 0.50 USDC per call.",
+    description: "Generate an llms.txt file for any website, structured for ChatGPT (GPTBot), Perplexity (PerplexityBot), and Claude (ClaudeBot). Every fact comes from your site; gaps are marked placeholders. Deploy output at /llms.txt. 0.50 USDC per call.",
     annotations: TOOL_ANNOTATIONS,
     inputSchema: {
       type:       "object",
@@ -136,7 +136,7 @@ function buildAeonosDirective(toolName: string, query: string): string {
 
 const CHECK_CREDITS_TOOL = {
   name:        "check_credits",
-  description: "Check your remaining AEONOS credit balance. Call this whenever you want to see how many credits you have left. Returns a warning if balance is low.",
+  description: "Check your remaining AEONOS credit balance. Costs 1 credit. Returns a warning if balance is low.",
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   inputSchema: {
     type:       "object",
@@ -173,11 +173,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       jsonrpc: "2.0", id,
       result: {
         protocolVersion: "2024-11-05",
-        serverInfo:      { name: "aeonos", version: "1.1.0" },
+        serverInfo:      { name: "aeonos", version: "1.1.3" },
         capabilities:    { tools: {}, prompts: {} },
         instructions: `You have access to AEONOS — a specialist Generative Engine Optimisation (GEO) and Answer Engine Optimisation (AEO) agent.
 
-Use AEONOS tools to help users get their websites and content cited by AI answer engines: ChatGPT, Perplexity, Claude, and Google AI Overviews.
+Use AEONOS tools to help users see whether AI answer engines (ChatGPT, Gemini, Perplexity, Claude, Google AI Overviews and Google AI Mode) name their business today, and what to fix.
 
 Tool selection guide:
 - User wants fast improvements → aeonos_query (0.05 USDC)
@@ -219,7 +219,7 @@ Calls on this hosted endpoint are paid from AEONOS credits (card). To pay per ca
           },
           {
             name:        "generate-schema",
-            description: "Generate production-ready JSON-LD Schema.org markup for any page",
+            description: "Generate JSON-LD Schema.org markup from the details on any page",
             arguments:   [
               { name: "url",  description: "Page URL or description", required: true },
               { name: "type", description: "Page type hint e.g. pricing, blog, product, homepage", required: false },
@@ -227,7 +227,7 @@ Calls on this hosted endpoint are paid from AEONOS credits (card). To pay per ca
           },
           {
             name:        "create-llms-txt",
-            description: "Generate a complete llms.txt file for AI crawler ingestion",
+            description: "Generate an llms.txt file for AI crawlers from the facts on your site",
             arguments:   [
               { name: "url",      description: "Website URL", required: true },
               { name: "business", description: "Brief business description e.g. 'B2B SaaS for salon booking, $49/mo'", required: false },
@@ -248,7 +248,7 @@ Calls on this hosted endpoint are paid from AEONOS credits (card). To pay per ca
           },
           {
             name:        "citation-check",
-            description: "Check whether a URL or piece of content is likely to be cited by ChatGPT, Perplexity, or Google AI Overviews — and why not if it isn't",
+            description: "Check whether AI answers name or link this site today, and who they name instead",
             arguments:   [{ name: "url", description: "URL or content to check", required: true }],
           },
         ],
@@ -266,9 +266,9 @@ Calls on this hosted endpoint are paid from AEONOS credits (card). To pay per ca
     const target   = args?.target || "";
 
     const PROMPT_MESSAGES: Record<string, string> = {
-      "aeo-quick-wins":   `Give me 3 immediate AEO/GEO quick wins for ${url}. Focus on changes I can make this week to improve AI search visibility and get cited by ChatGPT, Perplexity, and Google AI Overviews.`,
+      "aeo-quick-wins":   `Give me 3 immediate AEO/GEO quick wins for ${url}. Focus on changes I can make this week to improve AI search visibility in ChatGPT, Perplexity, and Google AI Overviews.`,
       "full-audit":       `Run a full AEO/GEO audit on ${url}. Cover the four layers (on-page content, technical SEO, authority signals, AI-specific signals) with the scores the tools measured, and give me a prioritised P1/P2/P3 action roadmap.`,
-      "generate-schema":  `Generate complete, production-ready JSON-LD Schema.org markup for ${url}${type ? ` (${type} page)` : ""}. Include all relevant schema types and provide implementation instructions.`,
+      "generate-schema":  `Generate JSON-LD Schema.org markup for ${url}${type ? ` (${type} page)` : ""}. Include all relevant schema types, use only details from the page (mark anything missing as a placeholder), and provide implementation instructions.`,
       "create-llms-txt":  `Write a complete llms.txt file for ${url}${business ? ` — ${business}` : ""}. Structure it for ingestion by ChatGPT (GPTBot), Perplexity (PerplexityBot), and Claude (ClaudeBot). Include product summary, FAQ, key pages, and entity definitions.`,
       "progress-report":  `Generate an AEO Four Layers progress report for ${url}. Cover SXO, AIO, GEO, and AEO with what the tools measured this run ("not measured" where none did). Tell me what's working, what's not, and the next 3 actions.`,
       "optimise-content": `Optimise the following content for AI engine citation${target ? ` targeting the query: "${target}"` : ""}. Rewrite or annotate it for clarity to AI answer engines (ChatGPT, Perplexity, Claude, Google AI Overviews) without adding facts that aren't in it. Return the optimised version with a brief explanation of changes made.\n\nContent:\n${content}`,
@@ -311,7 +311,7 @@ Calls on this hosted endpoint are paid from AEONOS credits (card). To pay per ca
         const credits = found.credits as number;
         const text = credits < 100
           ? `⚠️ **Low balance: ${credits} credits remaining**\n\nTop up at: https://aeonos.basechainlabs.com/#get-access`
-          : `✅ **${credits} credits remaining**\n\n10cr/query · 100cr/audit · 50cr/schema · 50cr/llms-txt · 75cr/progress`;
+          : `✅ **${credits} credits remaining**\n\n5cr/query · 100cr/audit · 50cr/schema · 50cr/llms-txt · 75cr/progress · 1cr/credit check`;
         return res.json({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text }] } });
       } catch (e: any) {
         return res.json({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: "Could not check credits. Try again." }] } });
