@@ -56,7 +56,7 @@ const OFFERING_PROMPTS = {
   aeonos_llms_txt: (q) =>
     `Generate a complete llms.txt file for: ${q}. Use the full AEONOS llms.txt format with sections: brand summary, what we make/offer, key facts, target audience, differentiation, FAQs (8–10 Q&As in natural language), and brand voice. File should be under 2,000 words and deploy-ready.`,
   aeonos_progress: (q) =>
-    `Generate a structured AEO progress report for: ${q}. Score each of the Four Layers (Technical/SXO, Content/AIO, Authority/GEO, Citation/AEO) from 0–100 with specific reasons. Identify the top 3 things working, the top 3 things broken, and give exactly 3 priority actions ranked by impact. Use the progress report format — not a strategy overview.`,
+    `Generate a structured AEO progress report for: ${q}. For each of the Four Layers (Technical/SXO, Content/AIO, Authority/GEO, Citation/AEO) report what the tools measured this run: citation results only from checkLiveCitations, page findings and checklist scores only from inspectSiteStructure. Give a layer a number only when a tool returned it; otherwise write "not measured", and write "not checked" with the reason for any engine or page that returned nothing. Never estimate a score. Identify the top 3 things working and the top 3 things broken from this run's findings, and give exactly 3 priority actions, each tied to one of those findings. Use the progress report format — not a strategy overview.`,
 };
 
 // Sweep: ALL USDC earnings go to the Pemba buyer wallet, which pays for AEONOS calls, so AEONOS funds its own

@@ -2,7 +2,7 @@
   "name": "aeonos-mcp",
   "version": "1.1.2",
   "mcpName": "io.github.Clawdio777/aeonos",
-  "description": "AEONOS — AI Search Visibility Agent. GEO/AEO specialist MCP server. Make any website citable by ChatGPT, Perplexity, Claude, and Google AI Overviews. — LLM SEO and AI citation optimisation for agent-native workflows.",
+  "description": "AEONOS — AI Search Visibility Agent. GEO/AEO specialist MCP server. Checks whether ChatGPT, Gemini, Perplexity, Claude and Google AI Overviews name or link a website, and gives the fixes. — LLM SEO and AI citation optimisation for agent-native workflows.",
   "type": "module",
   "bin": {
     "aeonos-mcp": "./mcp-server.mjs"

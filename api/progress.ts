@@ -20,7 +20,7 @@ const BAZAAR = buildBazaarExtension({
   serviceName:      "AEONOS — Progress Report",
   queryDescription: "Your real site URL (replace YOUR-SITE.com) or business to report on. E.g. 'Generate a progress report for https://yourdomain.com'.",
   queryExample:     "Generate an AEO Four Layers progress report for https://YOUR-SITE.com",
-  outputExample:    "# AEO Progress Report: mysite.com\n\n## Four Layers Scores\n- SXO: 72/100\n- AIO: 58/100\n- GEO: 44/100\n- AEO: 61/100\n\n## What's Working\n...\n\n## Next 3 Actions\n...",
+  outputExample:    "# AEO Progress Report: mysite.com\n\n## Four Layers (this run)\n- SXO: not measured\n- AIO: AEONOS checklist score 58/100 (one fetched page, not a measure of AI citations)\n- GEO: not measured\n- AEO: named in 1 of 5 Perplexity answers; Gemini not checked (no data returned)\n\n## What's Working\n...\n\n## Next 3 Actions\n...",
 });
 
 const db = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!);

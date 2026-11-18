@@ -160,7 +160,7 @@ export const tools: Anthropic.Tool[] = [
         },
         brand_name: {
           type: "string",
-          description: "Optional. The business's name exactly as its own site writes it (e.g. 'Sherbourne House'). An answer that names it without linking the site counts as named. Only pass a name taken from the site or the caller, never a guess.",
+          description: "Optional. The business's name exactly as its own site writes it (e.g. 'Harbour Lane Bakery'). An answer that names it without linking the site counts as named. Only pass a name taken from the site or the caller, never a guess.",
         },
         country: {
           type: "string",
@@ -730,9 +730,9 @@ export function brandRegex(brandName?: string): BrandMatch | null {
 
 /**
  * True when the text names the business. A match written all in lower case across two or more words is ordinary
- * prose when the real name is capitalised: "western herbal medicine traditions" is not "Medicine Traditions", and
+ * prose when the real name is capitalised: "traditional garden remedies" is not "Garden Remedies", and
  * "a remedial massage clinic" is not "Remedial Massage Clinic" (17/11/2026, same rule as Pemba's nameMentioned).
- * "MEDICINE TRADITIONS", "Medicine traditions" and "medicinetraditions" still count.
+ * "GARDEN REMEDIES", "Garden remedies" and "gardenremedies" still count.
  */
 export function brandInText(brand: BrandMatch | null, text: string): boolean {
   if (!brand) return false;
