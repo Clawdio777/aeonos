@@ -45,14 +45,34 @@ Pricing: **0.10 USDC/call via x402** (USDC on Base). Get USDC at [coinbase.com/w
 
 ### Claude Desktop / Cursor / Windsurf
 
-Add to your MCP config:
+Set one of two environment variables. If both are set, `AEONOS_API_KEY` is used.
+
+**Card credits** (no wallet): buy credits at [aeonos.basechainlabs.com/#get-access](https://aeonos.basechainlabs.com/#get-access) and use the `pg_` key from your purchase email. The package sends each tool call to `https://aeonos.basechainlabs.com/api/mcp` with the key in the `X-Api-Key` header, and the call is charged to your credits.
 
 ```json
 {
   "mcpServers": {
     "aeonos": {
       "command": "npx",
-      "args": ["aeonos-mcp"],
+      "args": ["-y", "aeonos-mcp@latest"],
+      "env": {
+        "AEONOS_API_KEY": "pg_..."
+      }
+    }
+  }
+}
+```
+
+Clients that support remote MCP servers can skip the package: connect to `https://aeonos.basechainlabs.com/api/mcp` with the header `X-Api-Key: pg_...`.
+
+**USDC on Base (x402)**: set `AEONOS_PRIVATE_KEY` to a Base wallet private key with USDC. Payments are signed on your machine; the key is never sent anywhere. Get USDC on Base at [coinbase.com/wallet](https://coinbase.com/wallet).
+
+```json
+{
+  "mcpServers": {
+    "aeonos": {
+      "command": "npx",
+      "args": ["-y", "aeonos-mcp@latest"],
       "env": {
         "AEONOS_PRIVATE_KEY": "0x..."
       }
@@ -60,8 +80,6 @@ Add to your MCP config:
   }
 }
 ```
-
-`AEONOS_PRIVATE_KEY` — a Base wallet private key with USDC for payments. Get USDC on Base at [coinbase.com/wallet](https://coinbase.com/wallet).
 
 ### MCP Market
 

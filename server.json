@@ -6,20 +6,27 @@
     "url": "https://github.com/Clawdio777/aeonos",
     "source": "github"
   },
-  "version": "1.1.1",
+  "version": "1.1.3",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "aeonos-mcp",
-      "version": "1.1.1",
+      "version": "1.1.3",
       "transport": {
         "type": "stdio"
       },
       "environmentVariables": [
         {
+          "name": "AEONOS_API_KEY",
+          "description": "AEONOS API key (pg_...) from a card credit purchase at https://aeonos.basechainlabs.com/#get-access. Calls go to the hosted endpoint with this key in X-Api-Key and are charged to your credits. Used instead of AEONOS_PRIVATE_KEY when both are set.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
           "name": "AEONOS_PRIVATE_KEY",
-          "description": "Base wallet private key (0x...) — used to sign x402 payments in USDC on Base. Per-call: 0.05 (query), 0.50 (schema/llms-txt), 1.50 (progress), 2.50 USDC (audit).",
-          "isRequired": true,
+          "description": "Base wallet private key (0x...) to pay per call in USDC on Base via x402, signed on your machine. Per-call: 0.05 (query), 0.50 (schema/llms-txt), 1.50 (progress), 2.50 USDC (audit). Set this or AEONOS_API_KEY.",
+          "isRequired": false,
           "format": "string",
           "isSecret": true
         }
