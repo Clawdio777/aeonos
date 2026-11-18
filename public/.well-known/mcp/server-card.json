@@ -7,7 +7,7 @@
   "authentication": {
     "required": true,
     "schemes": ["header"],
-    "description": "The hosted endpoint uses an AEONOS API key (starts with pg_) from a card credit purchase at https://aeonos.basechainlabs.com/#get-access, sent as the X-Api-Key header. Never send a wallet private key to any hosted service. To pay per call in USDC on Base, run the npm package locally (npx aeonos-mcp) so your wallet key never leaves your machine."
+    "description": "The hosted endpoint uses an AEONOS API key (starts with pg_) from a card credit purchase at https://aeonos.basechainlabs.com/#get-access, sent as the X-Api-Key header to https://aeonos.basechainlabs.com/api/mcp. Never send a wallet private key to any hosted service. To pay per call in USDC on Base, run the npm package locally (npx aeonos-mcp) so your wallet key never leaves your machine."
   },
   "tools": [
     {
